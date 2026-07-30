@@ -1,0 +1,157 @@
+<div id="hud">
+  <div id="topbar" class="panel">
+    <div class="logo">HULL &amp; <b>HAVOC</b></div>
+    <div class="sep"></div>
+    <div id="modeTag">Shipyard</div>
+    <div class="sep"></div>
+    <div class="stat" id="battleStat"><span id="enemyHull">100</span>% ENEMY</div>
+  </div>
+
+  <!-- BUILD UI -->
+  <div id="buildUI">
+    <div id="shipstats" class="panel">
+      <h3>Ship Report</h3>
+      <div class="srow">Blocks <b id="stBlocks">0</b></div>
+      <div class="srow">Mass <b id="stMass">0 t</b></div>
+      <div class="srow">Lift Ratio <b id="stLift">0.0</b></div>
+      <div class="srow">Engines <b id="stEng">0</b></div>
+      <div class="srow">Cannons <b id="stCan">0</b></div>
+      <div class="srow">Ballast Tanks <b id="stBal">0</b></div>
+      <div class="srow">Torpedo Tubes <b id="stTorp">0</b></div>
+      <div class="srow">Lights <b id="stLight">0</b></div>
+      <div class="srow">Stability Limit <b id="stAngle">—</b></div>
+      <div class="verdict good" id="vFloat">Floats</div>
+      <div class="verdict mid" id="vDive">No Dive Capability</div>
+      <div id="bbWrap">
+        <div id="bbGrid">
+          <span id="bbBow">BOW</span>
+          <div id="bbRing"></div>
+          <div id="bbDot"></div>
+        </div>
+        <div id="bbInfo">Balanced</div>
+      </div>
+      <div class="verdict good" id="vBalance" style="margin-top:8px;">✓ Stable</div>
+      <div class="dockbtns">
+        <button id="resetBtn" title="Restore the starter ship">↺ Standard</button>
+        <button id="clearBtn" title="Remove every block">✕ Clear</button>
+      </div>
+    </div>
+
+    <div id="buildHint" class="panel">
+      <b>Tap</b> face to place<br>
+      <b>Eraser</b> to remove<br>
+      <b>Drag</b> to orbit · <b>Pinch</b> zoom<br>
+      Bow points <b>→ forward</b>
+    </div>
+
+    <button id="sailBtn">⚓ Set Sail</button>
+
+    <div id="palette" class="panel">
+      <div class="pbtn sel" data-type="hull"><div class="sw" style="background:#5a6b7c"></div>Hull</div>
+      <div class="pbtn" data-type="armor"><div class="sw" style="background:#3a4048"></div>Armor</div>
+      <div class="pbtn" data-type="engine"><div class="sw" style="background:#c8612f"></div>Engine</div>
+      <div class="pbtn" data-type="ballast"><div class="sw" style="background:#6a4cc8"></div>Ballast</div>
+      <div class="pbtn" data-type="cannon"><div class="sw" style="background:#23262b"></div>Cannon</div>
+      <div class="pbtn" data-type="light"><div class="sw" style="background:#f0dfa0"></div>Light</div>
+      <div class="pbtn" data-type="torpedo"><div class="sw" style="background:#2f6f5f"></div>Torp</div>
+      <div class="pbtn" data-type="erase"><div class="sw" style="background:repeating-linear-gradient(45deg,#e8453c,#e8453c 4px,#7a201a 4px,#7a201a 8px)"></div>Erase</div>
+    </div>
+  </div>
+
+  <!-- BATTLE UI -->
+  <div id="battleUI" class="hidden">
+    <div id="statusbars" class="panel">
+      <div>
+        <div class="bar-label">Hull <b id="hullPct">100%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="hullFill" style="width:100%"></div></div>
+      </div>
+      <div>
+        <div class="bar-label">Ballast <b id="ballastPct">0%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="ballastFill" style="width:0%"></div></div>
+      </div>
+      <div id="floodRow">
+        <div class="bar-label">Water Intake <b id="floodPct">0%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="floodFill" style="width:0%"></div></div>
+      </div>
+      <div id="attitude">
+        <div id="horizonBox"><div id="horizonLine"></div><div id="horizonRef"></div></div>
+        <div id="attText">
+          <div>Pitch <b id="pitchVal">0°</b></div>
+          <div>Roll <b id="rollVal">0°</b></div>
+          <div id="trimMode">AUTO DEPTH</div>
+          <div id="planeState">Planes idle</div>
+        </div>
+      </div>
+      <div class="bar-label" style="margin:0;">Heel <b id="heelVal">0°</b><span style="opacity:.6;font-size:10px;">limit <b id="heelLimit" style="font-size:10px;">40°</b></span></div>
+    </div>
+
+    <div id="depthgauge" class="panel">
+      <div class="gv" id="depthVal">0.0</div>
+      <div class="gl">Depth (m)</div>
+      <div class="ordrow">ordered <b id="ordDepth">0 m</b></div>
+      <div id="subBadge">◈ SUBMARINE</div>
+    </div>
+
+    <div id="heelWarn">⚠ Taking On Water<small>Straighten up or you'll capsize</small></div>
+
+    <div id="aimbar" class="panel">
+      <div class="al">Power <b id="powVal">50%</b> · Range <i id="rangeVal">—</i></div>
+      <input type="range" id="powSlider" min="0" max="100" value="50">
+      <div class="al2">Elev <b id="elevVal">10°</b><span>Trav <b id="travVal">0°</b></span></div>
+      <div class="aimrow">
+        <input type="range" id="elevSlider" min="0" max="100" value="24">
+        <input type="range" id="travSlider" min="-100" max="100" value="0">
+      </div>
+    </div>
+
+    <div id="reload" class="panel ready">
+      <div class="rl" id="reloadLabel">Weapon Ready</div>
+      <div id="reloadTrack"><div id="reloadFill"></div></div>
+      <div id="torpRow" style="display:none;margin-top:6px;">
+        <div class="rl" id="torpLabel" style="color:#78dcbe;">Torpedo Ready</div>
+        <div class="torptrack"><div id="torpFill" style="height:100%;width:100%;border-radius:5px;background:linear-gradient(90deg,#2f6f5f,#78dcbe);"></div></div>
+      </div>
+    </div>
+
+    <div id="keys" class="panel">
+      <div class="k"><kbd>W</kbd><kbd>S</kbd>Throttle</div>
+      <div class="k"><kbd>A</kbd><kbd>D</kbd>Steer</div>
+      <div class="k"><kbd>Q</kbd><kbd>E</kbd>Depth</div>
+      <div class="k"><kbd>I</kbd><kbd>K</kbd><kbd>J</kbd><kbd>L</kbd>Trim</div>
+      <div class="k"><kbd>H</kbd>Auto</div>
+      <div class="k"><kbd>Space</kbd>Fire</div>
+      <div class="k"><kbd>T</kbd>Torpedo</div>
+      <div class="k"><kbd>↑</kbd><kbd>↓</kbd>Elev</div>
+      <div class="k"><kbd>←</kbd><kbd>→</kbd>Trav</div>
+      <div class="k"><kbd>[</kbd><kbd>]</kbd>Power</div>
+    </div>
+  </div>
+
+  <div id="centerbox">
+    <div id="toast"></div>
+    <div id="endBtns">
+      <button id="rebuildBtn">⚒ Rebuild</button>
+      <button id="rematchBtn">⚔ Rematch</button>
+    </div>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="joy"><div id="joyBase"></div><div id="joyNub"></div></div>
+  <div id="trimPad">
+    <div class="tbtn tsm" id="trimUp">▲</div>
+    <div class="trimrow">
+      <div class="tbtn tsm" id="trimLeft">◀</div>
+      <div class="tbtn tsm" id="trimAuto">AUTO</div>
+      <div class="tbtn tsm" id="trimRight">▶</div>
+    </div>
+    <div class="tbtn tsm" id="trimDown">▼</div>
+  </div>
+
+  <div id="ballastBtns">
+    <div class="tbtn" id="floodBtn">Dive</div>
+    <div class="tbtn" id="blowBtn">Rise</div>
+  </div>
+  <div class="tbtn" id="fireBtn">Fire</div>
+  <div class="tbtn" id="torpBtn">Torp</div>
+</div>

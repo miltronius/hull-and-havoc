@@ -1,0 +1,2351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hull &amp; Havoc — Shipyard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { overflow: hidden; width: 100%; height: 100%; background: #07121f; font-family: 'Oswald', sans-serif; }
+  canvas { display: block; }
+
+  :root {
+    --steel: #aeb9c4; --rust: #c8612f; --amber: #f5b342;
+    --sea: #6fd0e0; --danger: #e8453c; --ok: #7ddc8a; --ink: #07121f;
+    --purple: #b39ddb;
+  }
+
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; color: #dceaf5; }
+  .panel {
+    background: rgba(7,18,31,0.74); backdrop-filter: blur(10px);
+    border: 1px solid rgba(174,185,196,0.18); border-radius: 12px;
+  }
+  .hidden { display: none !important; }
+
+  /* ====== shared top bar ====== */
+  #topbar {
+    position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 16px; padding: 8px 20px; white-space: nowrap;
+  }
+  #topbar .logo { font-size: 19px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--amber); }
+  #topbar .logo b { color: var(--rust); }
+  .sep { width: 1px; height: 22px; background: rgba(174,185,196,0.2); }
+  .stat { font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.85; text-transform: uppercase; letter-spacing: 1px; }
+  .stat span { color: var(--sea); font-weight: 700; font-size: 13px; }
+  #modeTag { font-size: 12px; letter-spacing: 2px; color: var(--purple); text-transform: uppercase; }
+
+  /* ====== BUILD MODE UI ====== */
+  #palette {
+    position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; padding: 10px 12px; pointer-events: auto;
+    max-width: min(560px, calc(100vw - 28px));
+    overflow-x: auto; overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(174,185,196,0.4) transparent;
+    /* fade the edges so it reads as scrollable */
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+            mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  }
+  #palette::-webkit-scrollbar { height: 5px; }
+  #palette::-webkit-scrollbar-track { background: transparent; }
+  #palette::-webkit-scrollbar-thumb { background: rgba(174,185,196,0.35); border-radius: 3px; }
+  #palette::-webkit-scrollbar-thumb:hover { background: rgba(174,185,196,0.6); }
+  .pbtn {
+    min-width: 64px; flex: 0 0 auto; padding: 8px 10px; border-radius: 9px; cursor: pointer; user-select: none;
+    border: 1px solid rgba(174,185,196,0.22); background: rgba(174,185,196,0.07);
+    text-align: center; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600;
+  }
+  .pbtn .sw { width: 22px; height: 22px; border-radius: 5px; margin: 0 auto 5px; border: 1px solid rgba(255,255,255,0.25); }
+  .pbtn.sel { border-color: var(--amber); background: rgba(245,179,66,0.16); }
+  .pbtn:active { background: rgba(245,179,66,0.28); }
+
+  #shipstats {
+    position: absolute; top: 70px; left: 14px; padding: 14px; width: 218px;
+    font-size: 12px; letter-spacing: 0.5px;
+  }
+  #shipstats h3 { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: var(--amber); margin-bottom: 9px; }
+  .srow { display: flex; justify-content: space-between; margin-bottom: 5px; text-transform: uppercase; font-size: 11px; opacity: 0.95; }
+  .srow b { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--sea); }
+  .verdict { margin-top: 9px; padding: 6px 8px; border-radius: 7px; text-align: center; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; }
+  .verdict.good { background: rgba(63,163,77,0.2); border: 1px solid rgba(125,220,138,0.4); color: var(--ok); }
+  .verdict.bad { background: rgba(200,57,47,0.2); border: 1px solid rgba(232,69,60,0.4); color: var(--danger); }
+  .verdict.mid { background: rgba(106,76,200,0.2); border: 1px solid rgba(179,157,219,0.4); color: var(--purple); }
+  .verdict.warn { background: rgba(245,179,66,0.15); border: 1px solid rgba(245,179,66,0.4); color: var(--amber); }
+
+  /* balance bubble (top view: up = bow) */
+  #bbWrap { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+  #bbGrid {
+    position: relative; width: 66px; height: 66px; border-radius: 9px; flex-shrink: 0;
+    background: rgba(0,0,0,0.35); border: 1px solid rgba(174,185,196,0.25); overflow: hidden;
+  }
+  #bbGrid::before, #bbGrid::after {
+    content: ''; position: absolute; background: rgba(174,185,196,0.22);
+  }
+  #bbGrid::before { left: 50%; top: 4px; bottom: 4px; width: 1px; }
+  #bbGrid::after { top: 50%; left: 4px; right: 4px; height: 1px; }
+  #bbRing {
+    position: absolute; left: 50%; top: 50%; width: 26px; height: 26px;
+    margin: -13px 0 0 -13px; border-radius: 50%; border: 1px dashed rgba(125,220,138,0.5);
+  }
+  #bbDot {
+    position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%;
+    background: var(--ok); box-shadow: 0 0 7px rgba(125,220,138,0.7);
+    left: 50%; top: 50%; transition: left 0.15s, top 0.15s, background 0.2s;
+  }
+  #bbBow { position: absolute; top: 1px; left: 50%; transform: translateX(-50%); font-size: 8px; letter-spacing: 1px; opacity: 0.55; }
+  #bbInfo { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; line-height: 1.6; opacity: 0.9; }
+
+  .dockbtns { display: flex; gap: 6px; margin-top: 10px; pointer-events: auto; }
+  .dockbtns button {
+    flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
+    font-family: 'Oswald', sans-serif; font-size: 11px; font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase;
+    background: rgba(174,185,196,0.1); border: 1px solid rgba(174,185,196,0.3); color: #dceaf5;
+  }
+  .dockbtns button:hover, .dockbtns button:active { background: rgba(111,208,224,0.28); }
+  #clearBtn:hover, #clearBtn:active { background: rgba(232,69,60,0.3); border-color: var(--danger); }
+
+  #sailBtn, #rebuildBtn, #rematchBtn {
+    pointer-events: auto; padding: 11px 30px; border-radius: 10px; cursor: pointer;
+    font-family: 'Oswald', sans-serif; font-size: 15px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+    background: rgba(200,97,47,0.3); border: 1px solid var(--rust); color: var(--amber);
+  }
+  #sailBtn:hover, #sailBtn:active { background: rgba(200,97,47,0.5); }
+  #sailBtn { position: absolute; bottom: 88px; left: 50%; transform: translateX(-50%); }
+  #sailBtn:disabled { opacity: 0.4; cursor: default; }
+
+  #buildHint { position: absolute; top: 70px; right: 14px; padding: 10px 14px; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.9; max-width: 190px; line-height: 1.7; }
+  #buildHint b { color: var(--sea); }
+
+  /* ====== BATTLE MODE UI ====== */
+  #statusbars { position: absolute; top: 70px; left: 14px; display: flex; flex-direction: column; gap: 9px; padding: 13px; width: 196px; }
+  .bar-label { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .bar-label b { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  .bar-track { height: 8px; background: rgba(0,0,0,0.45); border-radius: 5px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 5px; transition: width 0.15s ease; }
+  #hullFill { background: linear-gradient(90deg,#3fa34d,var(--ok)); }
+  #ballastFill { background: linear-gradient(90deg,#6a4cc8,var(--purple)); }
+  #floodFill { background: linear-gradient(90deg,#2f7fc8,var(--sea)); }
+
+  /* attitude / trim indicator */
+  #attitude { display: flex; gap: 10px; align-items: center; margin: 4px 0 2px; }
+  #horizonBox {
+    position: relative; width: 62px; height: 62px; border-radius: 50%;
+    background: rgba(0,0,0,0.4); border: 1px solid rgba(174,185,196,0.28);
+    overflow: hidden; flex-shrink: 0;
+  }
+  #horizonLine {
+    position: absolute; left: -30%; width: 160%; height: 200%;
+    top: 50%; background: linear-gradient(180deg, rgba(60,140,180,0.55) 0 50%, rgba(40,60,50,0.75) 50% 100%);
+    transform-origin: 50% 0%;
+  }
+  #horizonRef {
+    position: absolute; left: 50%; top: 50%; width: 26px; height: 2px; margin: -1px 0 0 -13px;
+    background: var(--amber); box-shadow: 0 0 4px rgba(245,179,66,0.8);
+  }
+  #attText { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; line-height: 1.7; }
+  #attText b { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--sea); }
+  #trimMode { margin-top: 2px; font-size: 9px; padding: 2px 5px; border-radius: 4px; text-align: center;
+              background: rgba(63,163,77,0.22); border: 1px solid rgba(125,220,138,0.4); color: var(--ok); }
+  #trimMode.man { background: rgba(245,179,66,0.2); border-color: rgba(245,179,66,0.5); color: var(--amber); }
+  #planeState {
+    margin-top: 3px; font-size: 9px; padding: 2px 5px; border-radius: 4px; text-align: center;
+    background: rgba(174,185,196,0.12); border: 1px solid rgba(174,185,196,0.25); color: #9fb0bd;
+  }
+  #planeState.active { background: rgba(111,208,224,0.25); border-color: var(--sea); color: #cfefff; }
+  #planeState.noflow { background: rgba(232,69,60,0.2); border-color: rgba(232,69,60,0.5); color: #ffc9c5; }
+  #horizonBox.trimming { border-color: var(--sea); box-shadow: 0 0 8px rgba(111,208,224,0.5); }
+  #floodRow.crit .bar-label { color: var(--danger); }
+
+  /* heel angle warning */
+  #heelWarn {
+    position: absolute; top: 168px; left: 50%; transform: translateX(-50%);
+    padding: 8px 18px; border-radius: 10px; text-align: center;
+    background: rgba(200,57,47,0.28); border: 1px solid var(--danger);
+    font-size: 14px; letter-spacing: 2px; text-transform: uppercase; font-weight: 600;
+    color: #ffd9d6; display: none; animation: pulseWarn 0.7s ease-in-out infinite;
+  }
+  #heelWarn.show { display: block; }
+  #heelWarn small { display: block; font-size: 10px; letter-spacing: 1px; opacity: 0.85; margin-top: 2px; }
+  @keyframes pulseWarn { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  #depthgauge { position: absolute; top: 70px; right: 14px; padding: 11px 13px; width: 112px; text-align: center; }
+  #depthgauge .gv { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: var(--sea); line-height: 1; }
+  #depthgauge .gl { font-size: 10px; letter-spacing: 2px; opacity: 0.7; margin-top: 3px; text-transform: uppercase; }
+  #depthgauge .ordrow { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.75; margin-top: 5px; }
+  #depthgauge .ordrow b { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--amber); }
+  #subBadge { margin-top: 7px; font-size: 10px; letter-spacing: 1.5px; padding: 3px 6px; border-radius: 6px; background: rgba(106,76,200,0.25); border: 1px solid rgba(179,157,219,0.4); color: #cdbdf0; display: none; }
+  #subBadge.on { display: block; }
+
+  #reload { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); width: 220px; padding: 7px 12px; text-align: center; }  #reload .rl { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.8; }
+  #reloadTrack, .torptrack { height: 7px; background: rgba(0,0,0,0.45); border-radius: 5px; overflow: hidden; }
+  #reloadFill { height: 100%; width: 100%; border-radius: 5px; background: linear-gradient(90deg,var(--rust),var(--amber)); }
+  #reload.ready #reloadFill { background: linear-gradient(90deg,#3fa34d,var(--ok)); }
+  #reload.ready .rl { color: var(--sea); }
+
+  #keys { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 13px; padding: 8px 16px; font-size: 11px; text-transform: uppercase; }
+  #keys kbd { font-family: 'JetBrains Mono', monospace; background: rgba(174,185,196,0.14); border: 1px solid rgba(174,185,196,0.25); border-radius: 5px; padding: 1px 6px; margin-right: 4px; font-size: 10px; }
+
+  /* aiming: power slider */
+  #aimbar {
+    position: absolute; bottom: 104px; left: 50%; transform: translateX(-50%);
+    width: 224px; padding: 8px 14px 10px; pointer-events: auto; text-align: center;
+  }
+  #aimbar .al { font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; opacity: 0.85; margin-bottom: 6px; }
+  #aimbar .al b { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--amber); }
+  #aimbar .al i { font-style: normal; color: var(--sea); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  #powSlider {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 8px; border-radius: 5px;
+    background: linear-gradient(90deg, #2f5f7a, var(--rust), var(--amber));
+    outline: none; margin: 0;
+  }
+  #powSlider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: #dceaf5; border: 2px solid var(--rust); cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+  }
+  #aimbar .al2 { display: flex; justify-content: space-between; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.8; margin: 7px 0 3px; }
+  #aimbar .al2 b { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--sea); }
+  #aimbar .aimrow { display: flex; gap: 8px; }
+  #elevSlider, #travSlider {
+    -webkit-appearance: none; appearance: none; flex: 1; height: 6px; border-radius: 4px;
+    background: rgba(174,185,196,0.22); outline: none; margin: 0;
+  }
+  #elevSlider::-webkit-slider-thumb, #travSlider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: #dceaf5; border: 2px solid var(--sea); cursor: pointer;
+  }
+  #elevSlider::-moz-range-thumb, #travSlider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%; background: #dceaf5; border: 2px solid var(--sea); cursor: pointer;
+  }
+  #powSlider::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%; background: #dceaf5;
+    border: 2px solid var(--rust); cursor: pointer;
+  }
+
+  #centerbox {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center; transition: transform 0.7s cubic-bezier(.2,.9,.3,1);
+  }
+  #centerbox.compact { transform: translate(-50%,-50%) translateY(-30vh) scale(0.6); }
+  #toast { font-size: 42px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; opacity: 0; transition: all 0.4s cubic-bezier(.2,.9,.3,1); transform: scale(0.9); text-shadow: 0 4px 24px rgba(0,0,0,0.6); }
+  #toast.show { opacity: 1; transform: scale(1); }
+  #toast.win { color: var(--amber); } #toast.lose { color: var(--danger); }
+  #endBtns { display: none; margin-top: 16px; gap: 12px; justify-content: center; }
+  #endBtns.show { display: flex; }
+
+  /* touch battle controls */
+  #touch { position: absolute; inset: 0; display: none; pointer-events: none; z-index: 11; }
+  #joy { position: absolute; bottom: 22px; left: 22px; width: 124px; height: 124px; pointer-events: auto; }
+  #joyBase { width: 100%; height: 100%; border-radius: 50%; background: rgba(7,18,31,0.55); border: 1px solid rgba(174,185,196,0.2); }
+  #joyNub { position: absolute; top: 50%; left: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; background: rgba(111,208,224,0.6); border: 1px solid rgba(255,255,255,0.3); }
+  .tbtn { border-radius: 50%; background: rgba(7,18,31,0.6); border: 1px solid rgba(174,185,196,0.25); color: #dceaf5; font-family: 'Oswald', sans-serif; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; display: flex; align-items: center; justify-content: center; user-select: none; }
+  .tbtn:active { background: rgba(111,208,224,0.35); }
+  #fireBtn { position: absolute; bottom: 22px; right: 18px; width: 80px; height: 80px; background: rgba(200,97,47,0.5); border-color: rgba(245,179,66,0.5); font-size: 13px; pointer-events: auto; }
+  #torpBtn { position: absolute; bottom: 112px; right: 26px; width: 62px; height: 62px; background: rgba(47,111,95,0.55); border-color: rgba(120,220,190,0.5); font-size: 11px; pointer-events: auto; display: none; }
+  #torpBtn.show { display: flex; }
+  #trimPad {
+    position: absolute; bottom: 224px; left: 22px; display: none;
+    flex-direction: column; align-items: center; gap: 5px; pointer-events: auto;
+  }
+  #trimPad.show { display: flex; }
+  #trimPad .trimrow { display: flex; gap: 5px; align-items: center; }
+  .tbtn.tsm { width: 44px; height: 44px; font-size: 14px; }
+  #trimAuto { font-size: 9px; letter-spacing: 0.5px; }
+  #trimAuto.man { background: rgba(245,179,66,0.35); border-color: var(--amber); color: var(--amber); }
+  #ballastBtns { position: absolute; bottom: 160px; left: 22px; display: flex; gap: 10px; pointer-events: auto; }
+  #ballastBtns .tbtn { width: 52px; height: 52px; font-size: 10px; }
+
+  #loader { position: fixed; inset: 0; background: var(--ink); display: flex; align-items: center; justify-content: center; z-index: 50; flex-direction: column; gap: 16px; }
+  #loader .l1 { font-size: 26px; letter-spacing: 4px; color: var(--amber); text-transform: uppercase; font-weight: 700; }
+  #loader .l1 b { color: var(--rust); }
+  .spinner { width: 32px; height: 32px; border: 3px solid rgba(111,208,224,0.2); border-top-color: var(--sea); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="loader">
+  <div class="l1">HULL &amp; <b>HAVOC</b></div>
+  <div class="spinner"></div>
+</div>
+
+<div id="hud">
+  <div id="topbar" class="panel">
+    <div class="logo">HULL &amp; <b>HAVOC</b></div>
+    <div class="sep"></div>
+    <div id="modeTag">Shipyard</div>
+    <div class="sep"></div>
+    <div class="stat" id="battleStat"><span id="enemyHull">100</span>% ENEMY</div>
+  </div>
+
+  <!-- BUILD UI -->
+  <div id="buildUI">
+    <div id="shipstats" class="panel">
+      <h3>Ship Report</h3>
+      <div class="srow">Blocks <b id="stBlocks">0</b></div>
+      <div class="srow">Mass <b id="stMass">0 t</b></div>
+      <div class="srow">Lift Ratio <b id="stLift">0.0</b></div>
+      <div class="srow">Engines <b id="stEng">0</b></div>
+      <div class="srow">Cannons <b id="stCan">0</b></div>
+      <div class="srow">Ballast Tanks <b id="stBal">0</b></div>
+      <div class="srow">Torpedo Tubes <b id="stTorp">0</b></div>
+      <div class="srow">Lights <b id="stLight">0</b></div>
+      <div class="srow">Stability Limit <b id="stAngle">—</b></div>
+      <div class="verdict good" id="vFloat">Floats</div>
+      <div class="verdict mid" id="vDive">No Dive Capability</div>
+      <div id="bbWrap">
+        <div id="bbGrid">
+          <span id="bbBow">BOW</span>
+          <div id="bbRing"></div>
+          <div id="bbDot"></div>
+        </div>
+        <div id="bbInfo">Balanced</div>
+      </div>
+      <div class="verdict good" id="vBalance" style="margin-top:8px;">✓ Stable</div>
+      <div class="dockbtns">
+        <button id="resetBtn" title="Restore the starter ship">↺ Standard</button>
+        <button id="clearBtn" title="Remove every block">✕ Clear</button>
+      </div>
+    </div>
+
+    <div id="buildHint" class="panel">
+      <b>Tap</b> face to place<br>
+      <b>Eraser</b> to remove<br>
+      <b>Drag</b> to orbit · <b>Pinch</b> zoom<br>
+      Bow points <b>→ forward</b>
+    </div>
+
+    <button id="sailBtn">⚓ Set Sail</button>
+
+    <div id="palette" class="panel">
+      <div class="pbtn sel" data-type="hull"><div class="sw" style="background:#5a6b7c"></div>Hull</div>
+      <div class="pbtn" data-type="armor"><div class="sw" style="background:#3a4048"></div>Armor</div>
+      <div class="pbtn" data-type="engine"><div class="sw" style="background:#c8612f"></div>Engine</div>
+      <div class="pbtn" data-type="ballast"><div class="sw" style="background:#6a4cc8"></div>Ballast</div>
+      <div class="pbtn" data-type="cannon"><div class="sw" style="background:#23262b"></div>Cannon</div>
+      <div class="pbtn" data-type="light"><div class="sw" style="background:#f0dfa0"></div>Light</div>
+      <div class="pbtn" data-type="torpedo"><div class="sw" style="background:#2f6f5f"></div>Torp</div>
+      <div class="pbtn" data-type="erase"><div class="sw" style="background:repeating-linear-gradient(45deg,#e8453c,#e8453c 4px,#7a201a 4px,#7a201a 8px)"></div>Erase</div>
+    </div>
+  </div>
+
+  <!-- BATTLE UI -->
+  <div id="battleUI" class="hidden">
+    <div id="statusbars" class="panel">
+      <div>
+        <div class="bar-label">Hull <b id="hullPct">100%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="hullFill" style="width:100%"></div></div>
+      </div>
+      <div>
+        <div class="bar-label">Ballast <b id="ballastPct">0%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="ballastFill" style="width:0%"></div></div>
+      </div>
+      <div id="floodRow">
+        <div class="bar-label">Water Intake <b id="floodPct">0%</b></div>
+        <div class="bar-track"><div class="bar-fill" id="floodFill" style="width:0%"></div></div>
+      </div>
+      <div id="attitude">
+        <div id="horizonBox"><div id="horizonLine"></div><div id="horizonRef"></div></div>
+        <div id="attText">
+          <div>Pitch <b id="pitchVal">0°</b></div>
+          <div>Roll <b id="rollVal">0°</b></div>
+          <div id="trimMode">AUTO DEPTH</div>
+          <div id="planeState">Planes idle</div>
+        </div>
+      </div>
+      <div class="bar-label" style="margin:0;">Heel <b id="heelVal">0°</b><span style="opacity:.6;font-size:10px;">limit <b id="heelLimit" style="font-size:10px;">40°</b></span></div>
+    </div>
+
+    <div id="depthgauge" class="panel">
+      <div class="gv" id="depthVal">0.0</div>
+      <div class="gl">Depth (m)</div>
+      <div class="ordrow">ordered <b id="ordDepth">0 m</b></div>
+      <div id="subBadge">◈ SUBMARINE</div>
+    </div>
+
+    <div id="heelWarn">⚠ Taking On Water<small>Straighten up or you'll capsize</small></div>
+
+    <div id="aimbar" class="panel">
+      <div class="al">Power <b id="powVal">50%</b> · Range <i id="rangeVal">—</i></div>
+      <input type="range" id="powSlider" min="0" max="100" value="50">
+      <div class="al2">Elev <b id="elevVal">10°</b><span>Trav <b id="travVal">0°</b></span></div>
+      <div class="aimrow">
+        <input type="range" id="elevSlider" min="0" max="100" value="24">
+        <input type="range" id="travSlider" min="-100" max="100" value="0">
+      </div>
+    </div>
+
+    <div id="reload" class="panel ready">
+      <div class="rl" id="reloadLabel">Weapon Ready</div>
+      <div id="reloadTrack"><div id="reloadFill"></div></div>
+      <div id="torpRow" style="display:none;margin-top:6px;">
+        <div class="rl" id="torpLabel" style="color:#78dcbe;">Torpedo Ready</div>
+        <div class="torptrack"><div id="torpFill" style="height:100%;width:100%;border-radius:5px;background:linear-gradient(90deg,#2f6f5f,#78dcbe);"></div></div>
+      </div>
+    </div>
+
+    <div id="keys" class="panel">
+      <div class="k"><kbd>W</kbd><kbd>S</kbd>Throttle</div>
+      <div class="k"><kbd>A</kbd><kbd>D</kbd>Steer</div>
+      <div class="k"><kbd>Q</kbd><kbd>E</kbd>Depth</div>
+      <div class="k"><kbd>I</kbd><kbd>K</kbd><kbd>J</kbd><kbd>L</kbd>Trim</div>
+      <div class="k"><kbd>H</kbd>Auto</div>
+      <div class="k"><kbd>Space</kbd>Fire</div>
+      <div class="k"><kbd>T</kbd>Torpedo</div>
+      <div class="k"><kbd>↑</kbd><kbd>↓</kbd>Elev</div>
+      <div class="k"><kbd>←</kbd><kbd>→</kbd>Trav</div>
+      <div class="k"><kbd>[</kbd><kbd>]</kbd>Power</div>
+    </div>
+  </div>
+
+  <div id="centerbox">
+    <div id="toast"></div>
+    <div id="endBtns">
+      <button id="rebuildBtn">⚒ Rebuild</button>
+      <button id="rematchBtn">⚔ Rematch</button>
+    </div>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="joy"><div id="joyBase"></div><div id="joyNub"></div></div>
+  <div id="trimPad">
+    <div class="tbtn tsm" id="trimUp">▲</div>
+    <div class="trimrow">
+      <div class="tbtn tsm" id="trimLeft">◀</div>
+      <div class="tbtn tsm" id="trimAuto">AUTO</div>
+      <div class="tbtn tsm" id="trimRight">▶</div>
+    </div>
+    <div class="tbtn tsm" id="trimDown">▼</div>
+  </div>
+
+  <div id="ballastBtns">
+    <div class="tbtn" id="floodBtn">Dive</div>
+    <div class="tbtn" id="blowBtn">Rise</div>
+  </div>
+  <div class="tbtn" id="fireBtn">Fire</div>
+  <div class="tbtn" id="torpBtn">Torp</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  if (typeof THREE === 'undefined' || typeof CANNON === 'undefined') {
+    document.querySelector('#loader .l1').textContent = 'LOAD FAILED';
+    return;
+  }
+
+  // ============================================================
+  //  TUNING
+  // ============================================================
+  const WATER_LEVEL = 0, G = 9.82, SEABED = -150;
+  const DARK_DEPTH = 95;   // pitch black at/below this depth
+  const B = 1.6, HB = B / 2;            // block size / half
+  const LINEAR_DAMP = 0.45, ANGULAR_DAMP = 0.80;
+  const VERT_DRAG = 50;                 // per sample point
+  const SHELL_SPEED_MIN = 34, SHELL_SPEED_MAX = 115;
+  const RELOAD_SURFACE = 1.0, RELOAD_SUB = 1.8;
+  const BALLAST_RATE = 0.7;
+  const CANNON_MAX_DEPTH = 2.2;   // guns need to be at/near the surface
+  const DEPTH_STEP = 11;          // metres per second of holding dive/rise
+  const DEPTH_MAX = 130;
+  const TRIM_PITCH_TORQUE = 4700;  // bow up/down - the one you steer with
+  const TRIM_ROLL_TORQUE = 2200;
+  const MANUAL_BALLAST_RATE = 0.5;
+  const ENGINE_THRUST = 1800;           // per engine block
+  const TURN_PER_ENGINE = 950;
+  const GRID_R = 5, GRID_H = 5;         // build bounds
+
+  // Block catalogue: gameplay = mass vs lift tension, hp = how much punishment it takes
+  const BLOCKS = {
+    hull:    { mass: 80,  lift: 1600, hp: 100, color: 0x5a6b7c, label: 'Hull' },
+    armor:   { mass: 200, lift: 700,  hp: 340, color: 0x3a4048, label: 'Armor' },
+    engine:  { mass: 130, lift: 900,  hp: 120, color: 0xc8612f, label: 'Engine' },
+    ballast: { mass: 110, lift: 1450, hp: 110, color: 0x6a4cc8, label: 'Ballast' },
+    cannon:  { mass: 140, lift: 800,  hp: 150, color: 0x23262b, label: 'Cannon' },
+    light:   { mass: 60,  lift: 780,  hp: 70,  color: 0xf0dfa0, label: 'Light' },
+    torpedo: { mass: 165, lift: 900,  hp: 140, color: 0x2f6f5f, label: 'Torpedo' },
+  };
+  const MAX_LIVE_LIGHTS = 8;      // perf cap on real PointLights
+  const TORP_SPEED = 24;
+  const TORP_DAMAGE = 430;
+  const TORP_RELOAD = 4.5;
+  const TORP_LIFE = 14;
+  const TORP_MIN_DEPTH = 3.0;     // must be properly under to launch
+  const SHELL_DAMAGE = 165;      // direct hit
+  const SPLASH_DAMAGE = 70;      // to neighbours
+  const SPLASH_RADIUS = 2.6;
+
+  // --- Water ingress / capsizing ---
+  // UPGRADE_HOOK: raise this with purchased upgrades (sealed hatches etc.)
+  let STABILITY_UPGRADE = 0;     // degrees added to every ship's capsize angle
+  const INGRESS_BASE = 0.07;     // flood fraction per second right at the limit
+  const INGRESS_PER_DEG = 0.011; // extra per degree past the limit
+  const PUMP_RATE = 0.075;       // drained per second while upright (needs engines)
+  const FLOOD_LIFT_LOSS = 0.85;  // how much buoyancy a full flood costs
+
+  // ============================================================
+  //  SCENE / RENDERER
+  // ============================================================
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x9fc4d8, 0.0028);
+  const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 2000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  scene.add(new THREE.Mesh(
+    new THREE.SphereGeometry(1000, 32, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      uniforms: { top: { value: new THREE.Color(0x2b6ba3) }, bot: { value: new THREE.Color(0xbfe0ec) } },
+      vertexShader: 'varying vec3 vp; void main(){ vp=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: 'varying vec3 vp; uniform vec3 top; uniform vec3 bot; void main(){ float h=normalize(vp).y*0.5+0.5; gl_FragColor=vec4(mix(bot,top,clamp(h,0.0,1.0)),1.0); }'
+    })
+  ));
+
+  const sun = new THREE.DirectionalLight(0xfff0d4, 1.15);
+  sun.position.set(60, 120, 40);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
+  sun.shadow.camera.left = -120; sun.shadow.camera.right = 120;
+  sun.shadow.camera.top = 120; sun.shadow.camera.bottom = -120;
+  scene.add(sun);
+  const hemi = new THREE.HemisphereLight(0xbfe0ec, 0x2a4a5a, 0.65);
+  const amb = new THREE.AmbientLight(0x4a6878, 0.4);
+  scene.add(hemi); scene.add(amb);
+
+  // ocean (double-sided)
+  const SIZE = 1200, SEG = 110;
+  const waterGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG);
+  waterGeo.rotateX(-Math.PI / 2);
+  // tileable ripple normal map, generated at runtime (no external assets)
+  function makeRippleNormalMap(size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(size, size);
+    const H = (i, j) => {
+      const u = i / size * Math.PI * 2, v = j / size * Math.PI * 2;
+      return Math.sin(u * 3 + Math.cos(v * 2)) * 0.5
+           + Math.sin(v * 4 - Math.cos(u * 3)) * 0.35
+           + Math.sin((u + v) * 6) * 0.15;
+    };
+    for (let j = 0; j < size; j++) {
+      for (let i = 0; i < size; i++) {
+        const w = (a, b) => H((a + size) % size, (b + size) % size);
+        const dx = w(i + 1, j) - w(i - 1, j);
+        const dy = w(i, j + 1) - w(i, j - 1);
+        const nx = -dx * 1.6, ny = -dy * 1.6, nz = 1;
+        const len = Math.hypot(nx, ny, nz);
+        const o = (j * size + i) * 4;
+        img.data[o]     = (nx / len * 0.5 + 0.5) * 255;
+        img.data[o + 1] = (ny / len * 0.5 + 0.5) * 255;
+        img.data[o + 2] = (nz / len * 0.5 + 0.5) * 255;
+        img.data[o + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(26, 26);
+    return tex;
+  }
+
+  const rippleMap = makeRippleNormalMap(128);
+  const water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
+    color: 0x2c7a96, metalness: 0.16, roughness: 0.38,
+    transparent: true, opacity: 0.92, side: THREE.DoubleSide,
+    normalMap: rippleMap,
+    normalScale: new THREE.Vector2(0.32, 0.32)
+    // deliberately NO emissive: the underside must stay dark, otherwise
+    // the additive Snell window has nothing to stand out against
+  }));
+  water.receiveShadow = true;
+  scene.add(water);
+  const basePos = waterGeo.attributes.position.array.slice();
+  function waveHeight(x, z, t) {
+    return Math.sin(x * 0.05 + t * 0.9) * 0.55
+         + Math.sin(z * 0.07 + t * 1.1) * 0.45
+         + Math.sin((x + z) * 0.04 + t * 0.6) * 0.35
+         + Math.sin(x * 0.17 - z * 0.11 + t * 1.8) * 0.17   // chop
+         + Math.sin(z * 0.23 + x * 0.06 + t * 2.4) * 0.11;  // ripple
+  }
+
+  const deep = new THREE.Mesh(
+    new THREE.BoxGeometry(SIZE, 420, SIZE),
+    new THREE.MeshBasicMaterial({ color: 0x0a3247, transparent: true, opacity: 0.18, side: THREE.BackSide, depthWrite: false })
+  );
+  deep.position.y = -213;   // lid at -3, below the deepest wave trough
+  scene.add(deep);
+
+  // ============================================================
+  //  UNDERWATER SUNLIGHT  (god rays + Snell's window)
+  //  Additive, so it only ever adds light. Lives in the top ~30 m.
+  // ============================================================
+  function makeShaftTexture() {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const g = c.getContext('2d');
+    const v = g.createLinearGradient(0, 0, 0, 256);
+    v.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+    v.addColorStop(0.25, 'rgba(215,245,255,0.42)');
+    v.addColorStop(0.65, 'rgba(180,230,255,0.13)');
+    v.addColorStop(1.00, 'rgba(160,220,255,0)');
+    g.fillStyle = v; g.fillRect(0, 0, 64, 256);
+    const h = g.createLinearGradient(0, 0, 64, 0);
+    h.addColorStop(0.0, 'rgba(0,0,0,1)');
+    h.addColorStop(0.5, 'rgba(0,0,0,0)');
+    h.addColorStop(1.0, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = h; g.fillRect(0, 0, 64, 256);
+    return new THREE.CanvasTexture(c);
+  }
+
+  function makeGlowTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    r.addColorStop(0.00, 'rgba(255,255,248,1)');
+    r.addColorStop(0.12, 'rgba(255,250,225,0.92)');
+    r.addColorStop(0.30, 'rgba(190,235,255,0.42)');
+    r.addColorStop(0.55, 'rgba(140,210,255,0.12)');
+    r.addColorStop(1.00, 'rgba(110,190,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  }
+
+  const sunGroup = new THREE.Group();
+  sunGroup.visible = false;
+  scene.add(sunGroup);
+
+  const shaftMat = new THREE.MeshBasicMaterial({
+    map: makeShaftTexture(), transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    side: THREE.DoubleSide, fog: false
+  });
+  const SHAFT_H = 46, SHAFT_W = 15;
+  const shaftGeo = new THREE.PlaneGeometry(SHAFT_W, SHAFT_H);
+  shaftGeo.translate(0, -SHAFT_H / 2, 0);      // hangs down from the surface
+  const blades = [];
+  for (let i = 0; i < 7; i++) {
+    const m = new THREE.Mesh(shaftGeo, shaftMat);
+    m.rotation.y = (i / 7) * Math.PI;
+    m.rotation.z = (Math.random() - 0.5) * 0.22;
+    m.userData.phase = Math.random() * Math.PI * 2;
+    m.userData.baseX = 0.75 + Math.random() * 0.6;
+    sunGroup.add(m);
+    blades.push(m);
+  }
+
+  const glowMat = new THREE.MeshBasicMaterial({
+    map: makeGlowTexture(), transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    side: THREE.DoubleSide, fog: false
+  });
+  const lampHaloTex = makeGlowTexture();
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(58, 58), glowMat);
+  glow.rotation.x = -Math.PI / 2;               // flat under the surface, seen from below
+  glow.renderOrder = 3;
+  sunGroup.add(glow);
+
+  const bedGeo = new THREE.PlaneGeometry(SIZE, SIZE, 48, 48);
+  bedGeo.rotateX(-Math.PI / 2);
+  const bp = bedGeo.attributes.position.array;
+  for (let i = 0; i < bp.length; i += 3)
+    bp[i + 1] = (Math.sin(bp[i] * 0.03) + Math.cos(bp[i + 2] * 0.025)) * 2.2 + Math.sin(bp[i] * 0.11 + bp[i + 2] * 0.07) * 0.8;
+  bedGeo.computeVertexNormals();
+  const seabed = new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({ color: 0x2e3d33, roughness: 1, flatShading: true }));
+  seabed.position.y = SEABED;
+  scene.add(seabed);
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x3a4a40, roughness: 1, flatShading: true });
+  for (let i = 0; i < 24; i++) {
+    const r = new THREE.Mesh(new THREE.DodecahedronGeometry(2 + Math.random() * 5, 0), rockMat);
+    r.position.set((Math.random() - 0.5) * 500, SEABED + 1, (Math.random() - 0.5) * 500);
+    r.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    scene.add(r);
+  }
+
+  // ============================================================
+  //  PHYSICS WORLD
+  // ============================================================
+  const world = new CANNON.World();
+  world.gravity.set(0, -G, 0);
+  world.broadphase = new CANNON.NaiveBroadphase();
+  world.solver.iterations = 12;
+  const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
+  floorBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+  floorBody.position.set(0, SEABED, 0);
+  world.addBody(floorBody);
+
+  // ============================================================
+  //  SHIP DESIGN  (Map "ix,iy,iz" -> type)
+  // ============================================================
+  function key(x, y, z) { return x + ',' + y + ',' + z; }
+
+  function starterDesign() {
+    const d = new Map();
+    for (let x = -1; x <= 1; x++) for (let z = -2; z <= 2; z++) d.set(key(x, 0, z), 'hull');
+    d.set(key(0, 1, -2), 'engine');
+    d.set(key(0, 1, -1), 'ballast');
+    d.set(key(0, 1, 0), 'hull');
+    d.set(key(0, 1, 1), 'cannon');
+    d.set(key(0, 1, 2), 'hull');
+    return d;
+  }
+
+  function enemyDesign() {
+    const d = new Map();
+    for (let x = -1; x <= 1; x++) for (let z = -2; z <= 3; z++) d.set(key(x, 0, z), 'hull');
+    d.set(key(-1, 1, -2), 'engine'); d.set(key(1, 1, -2), 'engine');
+    d.set(key(0, 1, -1), 'hull');
+    d.set(key(0, 1, 0), 'cannon');
+    d.set(key(0, 1, 2), 'armor');
+    d.set(key(0, 1, 3), 'armor');
+    return d;
+  }
+
+  // Flood-fill: every block must touch the main structure face-to-face
+  const NEIGHBORS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+  function connectivity(design) {
+    const all = [...design.keys()];
+    if (all.length === 0) return { ok: true, set: new Set(), orphans: 0 };
+    const seen = new Set([all[0]]);
+    const stack = [all[0]];
+    while (stack.length) {
+      const [x, y, z] = stack.pop().split(',').map(Number);
+      for (const d of NEIGHBORS) {
+        const nk = key(x + d[0], y + d[1], z + d[2]);
+        if (design.has(nk) && !seen.has(nk)) { seen.add(nk); stack.push(nk); }
+      }
+    }
+    return { ok: seen.size === all.length, set: seen, orphans: all.length - seen.size };
+  }
+
+  function designStats(design) {
+    let mass = 0, lift = 0, engines = 0, cannons = 0, ballast = 0, count = 0, torps = 0, lights = 0;
+    let mx = 0, my = 0, mz = 0, lx = 0, lz = 0;
+    design.forEach((type, k) => {
+      const def = BLOCKS[type];
+      const [ix, iy, iz] = k.split(',').map(Number);
+      mass += def.mass; lift += def.lift; count++;
+      mx += ix * def.mass; my += (iy + 0.5) * def.mass; mz += iz * def.mass;
+      lx += ix * def.lift; lz += iz * def.lift;
+      if (type === 'engine') engines++;
+      if (type === 'cannon') cannons++;
+      if (type === 'ballast') ballast++;
+      if (type === 'torpedo') torps++;
+      if (type === 'light') lights++;
+    });
+    const massCx = mass ? mx / mass : 0, massCy = mass ? my / mass : 0, massCz = mass ? mz / mass : 0;
+    const liftCx = lift ? lx / lift : 0, liftCz = lift ? lz / lift : 0;
+
+    // lift-weighted spread = how wide the buoyant base is (capsize resistance)
+    let sx = 0, sz = 0;
+    design.forEach((type, k) => {
+      const def = BLOCKS[type];
+      const [ix, , iz] = k.split(',').map(Number);
+      sx += def.lift * (ix - liftCx) * (ix - liftCx);
+      sz += def.lift * (iz - liftCz) * (iz - liftCz);
+    });
+    const spreadX = lift ? Math.sqrt(sx / lift) : 0;
+    const spreadZ = lift ? Math.sqrt(sz / lift) : 0;
+
+    const offX = massCx - liftCx;          // + = heavy starboard
+    const offZ = massCz - liftCz;          // + = heavy toward bow
+    const capsizeRisk = massCy / (spreadX + 0.5); // tall + narrow = risky
+
+    const liftRatio = mass > 0 ? lift / (mass * G) : 0;
+    const ballastCut = Math.min(0.9, ballast * 0.25);
+    const conn = connectivity(design);
+    // Stability limit: wider hulls tolerate more heel before water pours in.
+    // UPGRADE_HOOK: future upgrades add a flat bonus to this angle.
+    const capsizeAngle = Math.min(70, 26 + spreadX * 15 + STABILITY_UPGRADE);
+    return { mass, lift, engines, cannons, ballast, count, torps, lights, liftRatio, ballastCut,
+             offX, offZ, capsizeRisk, spreadX, spreadZ, capsizeAngle,
+             connected: conn.ok, connectedSet: conn.set, orphans: conn.orphans,
+             floats: liftRatio > 1.05,
+             canDive: ballastCut > 0 && liftRatio * (1 - ballastCut) < 0.95 };
+  }
+
+  // ============================================================
+  //  BUILD MODE  (editable mesh ship on a grid)
+  // ============================================================
+  let playerDesign = starterDesign();
+  const buildGroup = new THREE.Group();
+  scene.add(buildGroup);
+  const buildMeshes = new Map(); // key -> mesh
+
+  const grid = new THREE.GridHelper((GRID_R * 2 + 1) * B, GRID_R * 2 + 1, 0x6fd0e0, 0x2a4a5a);
+  grid.position.y = 0.01;
+  scene.add(grid);
+
+  // invisible ground plane for raycast placement
+  const groundPlane = new THREE.Mesh(
+    new THREE.PlaneGeometry((GRID_R * 2 + 1) * B, (GRID_R * 2 + 1) * B),
+    new THREE.MeshBasicMaterial({ visible: false })
+  );
+  groundPlane.rotateX(-Math.PI / 2);
+  scene.add(groundPlane);
+
+  function blockMesh(type) {
+    const def = BLOCKS[type];
+    const g = new THREE.Group();
+    const core = new THREE.Mesh(
+      new THREE.BoxGeometry(B * 0.98, B * 0.98, B * 0.98),
+      new THREE.MeshStandardMaterial({ color: def.color, metalness: 0.35, roughness: 0.55, flatShading: true })
+    );
+    core.castShadow = core.receiveShadow = true;
+    g.add(core);
+    if (type === 'cannon') {
+      // pivot lets the barrel traverse (yaw) and elevate (pitch)
+      const pivot = new THREE.Group();
+      pivot.position.set(0, 0.15, 0);
+      const elevPivot = new THREE.Group();
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.17, B * 1.2, 8),
+        new THREE.MeshStandardMaterial({ color: 0x141414, metalness: 0.6, roughness: 0.4 })
+      );
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(0, 0, B * 0.7);
+      elevPivot.add(barrel);
+      pivot.add(elevPivot);
+      g.add(pivot);
+      g.userData.traversePivot = pivot;
+      g.userData.elevPivot = elevPivot;
+    }
+    if (type === 'light') {
+      const lens = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.34, 0.34, 0.16, 14),
+        new THREE.MeshStandardMaterial({ color: 0xfff6d0, emissive: 0xffe9a8, emissiveIntensity: 1.4 })
+      );
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(0, 0.1, B * 0.5);
+      g.add(lens);
+      g.userData.lens = lens;
+    }
+    if (type === 'torpedo') {
+      const tube = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.3, 0.3, B * 0.95, 12),
+        new THREE.MeshStandardMaterial({ color: 0x1b3d36, metalness: 0.55, roughness: 0.5 })
+      );
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(0, -0.1, B * 0.35);
+      g.add(tube);
+    }
+    if (type === 'engine') {
+      const pipe = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.22, 0.7, 8),
+        new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.8 })
+      );
+      pipe.position.set(0, B * 0.6, 0);
+      g.add(pipe);
+    }
+    g.userData.core = core;
+    return g;
+  }
+
+  function rebuildBuildView() {
+    buildMeshes.forEach(m => buildGroup.remove(m));
+    buildMeshes.clear();
+    const conn = connectivity(playerDesign);
+    playerDesign.forEach((type, k) => {
+      const [x, y, z] = k.split(',').map(Number);
+      const m = blockMesh(type);
+      m.position.set(x * B, y * B + HB, z * B);
+      m.userData.gridKey = k;
+      // orphaned blocks glow red so the player can see what to fix
+      if (!conn.set.has(k)) {
+        m.userData.core.material.emissive = new THREE.Color(0xe8453c);
+        m.userData.core.material.emissiveIntensity = 0.6;
+        m.userData.core.material.transparent = true;
+        m.userData.core.material.opacity = 0.75;
+      }
+      buildGroup.add(m);
+      buildMeshes.set(k, m);
+    });
+    refreshStats();
+  }
+
+  function refreshStats() {
+    const s = designStats(playerDesign);
+    document.getElementById('stBlocks').textContent = s.count;
+    document.getElementById('stMass').textContent = (s.mass / 1000).toFixed(1) + ' t';
+    document.getElementById('stLift').textContent = s.liftRatio.toFixed(2);
+    document.getElementById('stEng').textContent = s.engines;
+    document.getElementById('stCan').textContent = s.cannons;
+    document.getElementById('stBal').textContent = s.ballast;
+    document.getElementById('stAngle').textContent = s.count ? Math.round(s.capsizeAngle) + '°' : '—';
+    document.getElementById('stTorp').textContent = s.torps;
+    document.getElementById('stLight').textContent = s.lights;
+
+    const vF = document.getElementById('vFloat');
+    if (s.count === 0) { vF.textContent = 'Empty Dock'; vF.className = 'verdict bad'; }
+    else if (!s.connected) { vF.textContent = '⛔ ' + s.orphans + ' Block(s) Not Attached'; vF.className = 'verdict bad'; }
+    else if (s.floats) { vF.textContent = '✓ Floats'; vF.className = 'verdict good'; }
+    else { vF.textContent = '✗ Sinks!'; vF.className = 'verdict bad'; }
+
+    const vD = document.getElementById('vDive');
+    if (s.canDive) { vD.textContent = '◈ Dive-Capable'; vD.className = 'verdict good'; }
+    else if (s.ballast > 0) { vD.textContent = 'More Ballast To Dive'; vD.className = 'verdict mid'; }
+    else { vD.textContent = 'No Dive Capability'; vD.className = 'verdict mid'; }
+
+    // ---- balance indicator ----
+    // bubble: top view, up = bow (+z), right = starboard (+x)
+    const SCALE = 22; // px per block of COM offset
+    const px = THREE.MathUtils.clamp(s.offX * SCALE, -27, 27);
+    const pz = THREE.MathUtils.clamp(s.offZ * SCALE, -27, 27);
+    const dot = document.getElementById('bbDot');
+    dot.style.left = 'calc(50% + ' + px + 'px)';
+    dot.style.top = 'calc(50% - ' + pz + 'px)';
+
+    const tilt = Math.hypot(s.offX, s.offZ);   // blocks of horizontal COM offset
+    const sideBad = Math.abs(s.offX) > Math.abs(s.offZ);
+    let balTxt = [], severity = 0; // 0 ok, 1 warn, 2 bad
+    if (tilt > 0.25) {
+      severity = tilt > 0.7 ? 2 : 1;
+      if (sideBad) balTxt.push(s.offX > 0 ? 'Lists Starboard' : 'Lists Port');
+      else balTxt.push(s.offZ > 0 ? 'Bow-Heavy' : 'Stern-Heavy');
+    }
+    if (s.count > 0 && s.capsizeRisk > 1.6) {
+      severity = Math.max(severity, s.capsizeRisk > 2.2 ? 2 : 1);
+      balTxt.push('Top-Heavy');
+    }
+
+    const vB = document.getElementById('vBalance');
+    const info = document.getElementById('bbInfo');
+    if (s.count === 0) {
+      vB.textContent = '—'; vB.className = 'verdict mid';
+      info.textContent = ''; dot.style.background = '#888';
+    } else if (severity === 0) {
+      vB.textContent = '✓ Stable'; vB.className = 'verdict good';
+      info.textContent = 'Balanced';
+      dot.style.background = 'var(--ok)'; dot.style.boxShadow = '0 0 7px rgba(125,220,138,0.7)';
+    } else if (severity === 1) {
+      vB.textContent = '⚠ ' + balTxt.join(' · '); vB.className = 'verdict warn';
+      info.textContent = balTxt.join(', ');
+      dot.style.background = 'var(--amber)'; dot.style.boxShadow = '0 0 7px rgba(245,179,66,0.7)';
+    } else {
+      vB.textContent = '✗ ' + balTxt.join(' · '); vB.className = 'verdict bad';
+      info.textContent = 'Will tip over!';
+      dot.style.background = 'var(--danger)'; dot.style.boxShadow = '0 0 7px rgba(232,69,60,0.8)';
+    }
+
+    const warn = [];
+    if (s.engines === 0) warn.push('no engine');
+    if (s.cannons === 0) warn.push('no cannon');
+    const btn = document.getElementById('sailBtn');
+    if (s.count === 0) {
+      btn.disabled = true;
+      btn.textContent = '⚓ Set Sail';
+    } else if (!s.connected) {
+      btn.disabled = true;
+      btn.textContent = '⛔ ' + s.orphans + ' Loose Block' + (s.orphans === 1 ? '' : 's');
+    } else {
+      btn.disabled = false;
+      btn.textContent = warn.length ? '⚓ Set Sail (' + warn.join(', ') + ')' : '⚓ Set Sail';
+    }
+  }
+
+  // palette selection
+  let tool = 'hull';
+  document.querySelectorAll('.pbtn').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.pbtn').forEach(x => x.classList.remove('sel'));
+      b.classList.add('sel');
+      tool = b.dataset.type;
+      b.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    });
+  });
+
+  // place / erase via raycast tap
+  const raycaster = new THREE.Raycaster();
+  let lastEditAt = 0;
+  function tryEdit(clientX, clientY) {
+    if (mode !== 'build') return;
+    const now = performance.now();
+    if (now - lastEditAt < 120) return;   // never place two blocks from one tap
+    lastEditAt = now;
+    const ndc = new THREE.Vector2((clientX / innerWidth) * 2 - 1, -(clientY / innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+
+    const blockHits = raycaster.intersectObjects([...buildMeshes.values()].map(g => g.userData.core));
+    if (blockHits.length > 0) {
+      const hit = blockHits[0];
+      const k = hit.object.parent.userData.gridKey;
+      if (tool === 'erase') {
+        playerDesign.delete(k);
+        rebuildBuildView();
+        return;
+      }
+      // place adjacent in face-normal direction
+      const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).round();
+      const [x, y, z] = k.split(',').map(Number);
+      const nx = x + n.x, ny = y + n.y, nz = z + n.z;
+      if (Math.abs(nx) <= GRID_R && Math.abs(nz) <= GRID_R && ny >= 0 && ny <= GRID_H && !playerDesign.has(key(nx, ny, nz))) {
+        playerDesign.set(key(nx, ny, nz), tool);
+        rebuildBuildView();
+      }
+      return;
+    }
+    // empty ground: place at layer 0
+    if (tool !== 'erase') {
+      const gHit = raycaster.intersectObject(groundPlane);
+      if (gHit.length > 0) {
+        const gx = Math.round(gHit[0].point.x / B), gz = Math.round(gHit[0].point.z / B);
+        if (Math.abs(gx) <= GRID_R && Math.abs(gz) <= GRID_R && !playerDesign.has(key(gx, 0, gz))) {
+          playerDesign.set(key(gx, 0, gz), tool);
+          rebuildBuildView();
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  //  SHIP COMPILER  (design -> physics body + meshes)
+  // ============================================================
+  const activeShips = [];
+
+  function compileShip(design, x0, z0, heading, isPlayer) {
+    const stats = designStats(design);
+    const group = new THREE.Group();
+    scene.add(group);
+
+    // mass-weighted centroid -> recenters compound around its COM
+    let cx = 0, cy = 0, cz = 0;
+    design.forEach((type, k) => {
+      const [ix, iy, iz] = k.split(',').map(Number);
+      const m = BLOCKS[type].mass;
+      cx += ix * B * m; cy += (iy * B + HB) * m; cz += iz * B * m;
+    });
+    cx /= stats.mass; cy /= stats.mass; cz /= stats.mass;
+
+    const body = new CANNON.Body({ mass: stats.mass, linearDamping: LINEAR_DAMP, angularDamping: ANGULAR_DAMP });
+    body.position.set(x0, 1.2, z0);
+    body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), heading);
+
+    const blocks = [];
+    design.forEach((type, k) => {
+      const [ix, iy, iz] = k.split(',').map(Number);
+      const lx = ix * B - cx, ly = iy * B + HB - cy, lz = iz * B - cz;
+      const def = BLOCKS[type];
+      const shape = new CANNON.Box(new CANNON.Vec3(HB, HB, HB));
+      body.addShape(shape, new CANNON.Vec3(lx, ly, lz));
+
+      const m = blockMesh(type);
+      m.position.set(lx, ly, lz);
+      group.add(m);
+
+      blocks.push({
+        type, shape, mesh: m, alive: true,
+        hp: def.hp, maxHp: def.hp,
+        mass: def.mass, lift: def.lift,
+        local: new CANNON.Vec3(lx, ly, lz),
+        // two buoyancy sample points per block
+        s1: new CANNON.Vec3(lx, ly - HB * 0.5, lz),
+        s2: new CANNON.Vec3(lx, ly + HB * 0.3, lz),
+        isCannon: type === 'cannon',
+        isLight: type === 'light',
+        isTorpedo: type === 'torpedo'
+      });
+    });
+    // real lights, capped for performance
+    let litCount = 0;
+    for (const blk of blocks) {
+      if (blk.isLight && litCount < MAX_LIVE_LIGHTS) {
+        const pl = new THREE.PointLight(0xffe9b0, 0, 85, 1.0);
+        pl.position.set(blk.local.x, blk.local.y + 0.1, blk.local.z + B * 0.5);
+        group.add(pl);
+        blk.light = pl;
+        // glowing halo around the lens, so the lamp visibly reads as lit
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: lampHaloTex, color: 0xffe9b0, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+        }));
+        halo.scale.setScalar(5.5);
+        halo.position.copy(pl.position);
+        group.add(halo);
+        blk.halo = halo;
+        litCount++;
+      }
+    }
+    // stern dive planes - visible proof that trim input is doing something
+    let planes = null;
+    if (stats.ballast > 0) {
+      let minZ = Infinity, avgY = 0, n = 0;
+      for (const blk of blocks) { minZ = Math.min(minZ, blk.local.z); avgY += blk.local.y; n++; }
+      avgY = n ? avgY / n : 0;
+      planes = new THREE.Group();
+      planes.position.set(0, avgY, minZ - B * 0.35);
+      const finMat = new THREE.MeshStandardMaterial({ color: 0x8a97a3, metalness: 0.5, roughness: 0.5, flatShading: true });
+      for (const sgn of [-1, 1]) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(B * 1.15, 0.12, B * 0.62), finMat);
+        fin.position.set(sgn * B * 0.95, 0, 0);
+        fin.castShadow = true;
+        planes.add(fin);
+      }
+      group.add(planes);
+    }
+    world.addBody(body);
+
+    const ship = {
+      group, body, blocks, stats, planes, trimCmd: { pitch: 0, roll: 0, auth: 0 },
+      initialBlocks: blocks.length,
+      initialMass: stats.mass,
+      ballast: 0, buoyMul: 1, alive: true, isPlayer,
+      flooding: 0, tiltDeg: 0, capsizeAngle: stats.capsizeAngle,
+      targetDepth: 0, autoDepth: true,
+      reload: 0, reloadMax: 1, torpReload: 0, torpReloadMax: TORP_RELOAD,
+      engines: stats.engines, cannons: stats.cannons,
+      ballastCut: stats.ballastCut,
+      spawn: { x: x0, z: z0, heading }
+    };
+    recountShip(ship);
+    activeShips.push(ship);
+    return ship;
+  }
+
+  // Recompute live capabilities after blocks are lost
+  function recountShip(ship) {
+    let engines = 0, cannons = 0, ballast = 0, live = 0, lift = 0, mass = 0, torps = 0, lights = 0;
+    for (const b of ship.blocks) {
+      if (!b.alive) continue;
+      live++; lift += b.lift; mass += b.mass;
+      if (b.type === 'engine') engines++;
+      if (b.type === 'cannon') cannons++;
+      if (b.type === 'ballast') ballast++;
+      if (b.type === 'torpedo') torps++;
+      if (b.type === 'light') lights++;
+    }
+    ship.engines = engines;
+    ship.cannons = cannons;
+    ship.torpedoes = torps;
+    ship.lights = lights;
+    ship.liveCount = live;
+    ship.liveLift = lift;
+    ship.liveMass = mass;
+    ship.ballastCut = Math.min(0.9, ballast * 0.25);
+    ship.ballastTanks = ballast;
+    // can this hull ever float again with ballast blown?
+    ship.buoyant = mass > 0 && (lift * (1 - ship.flooding * FLOOD_LIFT_LOSS)) / (mass * G) > 1.0;
+  }
+
+  // Remove a single block from the compound body (cannon.js 0.6.2 safe)
+  function destroyBlock(ship, blk) {
+    if (!blk.alive) return;
+    blk.alive = false;
+
+    // world position for debris/effects before we detach it
+    const wp = new CANNON.Vec3();
+    ship.body.quaternion.vmult(blk.local, wp);
+    wp.vadd(ship.body.position, wp);
+
+    ship.group.remove(blk.mesh);
+    if (blk.light) { ship.group.remove(blk.light); blk.light = null; }
+    if (blk.halo) { ship.group.remove(blk.halo); blk.halo = null; }
+
+    // splice the shape out of the compound (no removeShape() in 0.6.2)
+    const idx = ship.body.shapes.indexOf(blk.shape);
+    if (idx >= 0) {
+      ship.body.shapes.splice(idx, 1);
+      ship.body.shapeOffsets.splice(idx, 1);
+      ship.body.shapeOrientations.splice(idx, 1);
+    }
+    ship.body.mass = Math.max(40, ship.body.mass - blk.mass);
+    ship.body.updateMassProperties();
+    ship.body.updateBoundingRadius();
+    ship.body.aabbNeedsUpdate = true;
+
+    recountShip(ship);
+    spawnDebris(wp.x, wp.y, wp.z, BLOCKS[blk.type].color);
+    spawnSplash(wp.x, wp.y, wp.z, 0xff8a3a, 10, 0.7);
+    spawnSplash(wp.x, wp.y, wp.z, 0x444444, 6, 0.5);
+  }
+
+  function clearShips() {
+    activeShips.forEach(s => { scene.remove(s.group); world.remove(s.body); });
+    activeShips.length = 0;
+  }
+
+  // ============================================================
+  //  BUOYANCY  (per-point, lift from block catalogue)
+  // ============================================================
+  const _wp = new CANNON.Vec3();
+  function applyBuoyancy(ship, t) {
+    const b = ship.body;
+    const floatPower = (1 - ship.ballast * ship.ballastCut) * (1 - ship.flooding * FLOOD_LIFT_LOSS) * ship.buoyMul;
+
+    let wet = 0, total = 0;
+    for (const blk of ship.blocks) {
+      if (!blk.alive) continue;
+      const half = blk.lift / 2;
+      for (const sp of [blk.s1, blk.s2]) {
+        total++;
+        b.quaternion.vmult(sp, _wp);
+        _wp.vadd(b.position, _wp);
+        const depth = (WATER_LEVEL + waveHeight(_wp.x, _wp.z, t)) - _wp.y;
+        if (depth > 0) {
+          wet++;
+          // LIFT stays at the sample point - that is what rights the hull
+          const submersion = Math.min(depth, 1.0);
+          b.applyForce(new CANNON.Vec3(0, submersion * half * floatPower, 0), _wp);
+        }
+      }
+    }
+
+    // DRAG must act at the centre of mass. Applying it at each off-centre
+    // sample point summed into a phantom torque that slowly span the hull -
+    // invisible on the surface (waves average it out) but a constant spin
+    // once fully submerged.
+    if (wet > 0) {
+      const v = b.velocity;
+      b.applyForce(new CANNON.Vec3(-v.x * 18 * wet, -v.y * VERT_DRAG * wet, -v.z * 18 * wet), b.position);
+      // water also resists rotation: damp more the deeper you are
+      const frac = wet / Math.max(1, total);
+      b.angularDamping = ANGULAR_DAMP + 0.10 * frac;
+    } else {
+      b.angularDamping = ANGULAR_DAMP;
+    }
+  }
+
+  // ============================================================
+  //  HEEL & WATER INGRESS
+  //  Tilt past the ship's stability limit lets water in. Flooding
+  //  costs buoyancy, which makes it list further -> death spiral.
+  //  Engines double as pumps: lose them and you can't bail out.
+  // ============================================================
+  function shipDepth(s) { return Math.max(0, WATER_LEVEL - s.body.position.y); }
+
+  const _up = new CANNON.Vec3();
+  function updateFlooding(ship, dt) {
+    if (!ship.alive) return;
+    ship.body.quaternion.vmult(new CANNON.Vec3(0, 1, 0), _up);
+    const tiltDeg = Math.acos(THREE.MathUtils.clamp(_up.y, -1, 1)) * 180 / Math.PI;
+    ship.tiltDeg = tiltDeg;
+
+    const over = tiltDeg - ship.capsizeAngle;
+    if (over > 0) {
+      ship.flooding = Math.min(1, ship.flooding + (INGRESS_BASE + over * INGRESS_PER_DEG) * dt);
+      // visible water pouring in at the low side
+      if (Math.random() < 0.35) {
+        const p = ship.body.position;
+        spawnSplash(p.x + (Math.random() - 0.5) * 4, p.y + 0.5, p.z + (Math.random() - 0.5) * 5, 0x9fd8e8, 2, 0.35);
+      }
+    } else if (ship.flooding > 0 && ship.engines > 0) {
+      // pumps only run if engines survive
+      ship.flooding = Math.max(0, ship.flooding - PUMP_RATE * dt);
+    }
+    recountShip(ship);
+  }
+
+  const parts = [];
+  const partGeo = new THREE.SphereGeometry(0.18, 6, 6);
+  function spawnSplash(x, y, z, color, count, spread) {
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(partGeo, new THREE.MeshBasicMaterial({ color, transparent: true }));
+      m.position.set(x, y, z);
+      scene.add(m);
+      parts.push({ mesh: m, vel: new THREE.Vector3((Math.random() - 0.5) * spread * 10, Math.random() * spread * 8 + 2, (Math.random() - 0.5) * spread * 10), life: 0.9 + Math.random() * 0.5 });
+    }
+  }
+
+  const shells = [];
+  const shellGeo = new THREE.SphereGeometry(0.32, 10, 10);
+  const shellMat = new THREE.MeshStandardMaterial({ color: 0xffd27f, emissive: 0xff8a2a, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.3 });
+
+  function fire(ship, opts) {
+    if (!ship.alive || ship.reload > 0 || shipDepth(ship) > CANNON_MAX_DEPTH) return;
+    const guns = ship.blocks.filter(b => b.alive && b.isCannon);
+    if (guns.length === 0) return;
+
+    const isPlayer = ship.isPlayer;
+    const speed = (opts && opts.speed) || speedFromPower(isPlayer ? aimPower : 0.5);
+    const elev = (opts && opts.elev !== undefined) ? opts.elev : (isPlayer ? aimElev : AI_ELEV);
+    const trav = (opts && opts.trav !== undefined) ? opts.trav : (isPlayer ? aimTrav : 0);
+
+    ship.reload = ship.reloadMax = RELOAD_SURFACE;
+    const b = ship.body;
+
+    // spotting data so the AI can correct its next shot
+    const spot = (opts && opts.spot) || null;
+
+    let lastDir = null;
+    for (const g of guns) {
+      const sol = gunSolution(ship, g, elev, trav);
+      lastDir = sol.dir;
+      const m = new THREE.Mesh(shellGeo, shellMat);
+      m.castShadow = true;
+      scene.add(m);
+      shells.push({
+        mesh: m,
+        pos: new THREE.Vector3(sol.pos.x, sol.pos.y, sol.pos.z),
+        prev: new THREE.Vector3(sol.pos.x, sol.pos.y, sol.pos.z),
+        vel: new THREE.Vector3(sol.dir.x, sol.dir.y, sol.dir.z).multiplyScalar(speed),
+        life: 6, wet: false, owner: ship, spot
+      });
+      spawnSplash(sol.pos.x, sol.pos.y, sol.pos.z, 0xffd27f, 6, 0.4);
+    }
+    if (lastDir) {
+      const rec = -150 * guns.length;
+      b.applyImpulse(new CANNON.Vec3(lastDir.x * rec, lastDir.y * rec, lastDir.z * rec), b.position);
+    }
+  }
+
+  // sinking debris chunks
+  const debris = [];
+  function spawnDebris(x, y, z, color) {
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(B * 0.5, B * 0.5, B * 0.5),
+      new THREE.MeshStandardMaterial({ color, metalness: 0.35, roughness: 0.7, flatShading: true, transparent: true })
+    );
+    m.position.set(x, y, z);
+    scene.add(m);
+    debris.push({
+      mesh: m, life: 4,
+      vel: new THREE.Vector3((Math.random() - 0.5) * 7, Math.random() * 5 + 1, (Math.random() - 0.5) * 7),
+      spin: new THREE.Vector3(Math.random() * 4, Math.random() * 4, Math.random() * 4)
+    });
+  }
+
+  // Localized damage: finds the nearest live block to the impact point
+  // ============================================================
+  //  TORPEDOES  (submarine weapon: only launch while submerged)
+  // ============================================================
+  const torpedoes = [];
+  const torpBodyGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.7, 10);
+  const torpMat = new THREE.MeshStandardMaterial({ color: 0xd8e4e0, metalness: 0.5, roughness: 0.4 });
+
+  function fireTorpedo(ship) {
+    if (!ship.alive || ship.torpReload > 0) return false;
+    if (shipDepth(ship) < TORP_MIN_DEPTH) return false;   // must be properly under
+    const tubes = ship.blocks.filter(b => b.alive && b.isTorpedo);
+    if (tubes.length === 0) return false;
+    ship.torpReload = ship.torpReloadMax = TORP_RELOAD;
+
+    const b = ship.body;
+    // torpedoes run flat: take the ship's heading, drop any pitch
+    const fwd = new CANNON.Vec3();
+    b.quaternion.vmult(new CANNON.Vec3(0, 0, 1), fwd);
+    const flat = new THREE.Vector3(fwd.x, 0, fwd.z).normalize();
+
+    for (const tube of tubes) {
+      const lw = new CANNON.Vec3();
+      b.quaternion.vmult(new CANNON.Vec3(tube.local.x, tube.local.y - 0.1, tube.local.z + B), lw);
+      lw.vadd(b.position, lw);
+
+      const m = new THREE.Mesh(torpBodyGeo, torpMat);
+      m.rotation.x = Math.PI / 2;
+      const holder = new THREE.Group();
+      holder.add(m);
+      holder.position.set(lw.x, lw.y, lw.z);
+      holder.lookAt(lw.x + flat.x, lw.y, lw.z + flat.z);
+      scene.add(holder);
+
+      torpedoes.push({
+        mesh: holder,
+        pos: new THREE.Vector3(lw.x, lw.y, lw.z),
+        prev: new THREE.Vector3(lw.x, lw.y, lw.z),
+        dir: flat.clone(),
+        depth: lw.y,
+        life: TORP_LIFE,
+        owner: ship
+      });
+      spawnSplash(lw.x, lw.y, lw.z, 0xbfe8f0, 8, 0.4);
+    }
+    return true;
+  }
+
+  function updateTorpedoes(dt, t) {
+    for (let i = torpedoes.length - 1; i >= 0; i--) {
+      const tp = torpedoes[i];
+      tp.prev.copy(tp.pos);
+      tp.pos.addScaledVector(tp.dir, TORP_SPEED * dt);
+      // hold launch depth, but never break the surface
+      const surf = WATER_LEVEL + waveHeight(tp.pos.x, tp.pos.z, t);
+      tp.pos.y = Math.min(tp.depth, surf - 0.6);
+      tp.mesh.position.copy(tp.pos);
+      tp.life -= dt;
+
+      if (Math.random() < 0.7) spawnSplash(tp.pos.x, tp.pos.y, tp.pos.z, 0xcdeef5, 1, 0.15);
+
+      let dead = tp.life <= 0;
+      if (tp.pos.y < SEABED + 1) dead = true;
+
+      if (!dead) {
+        const travel = tp.prev.distanceTo(tp.pos);
+        const steps = Math.max(1, Math.ceil(travel / 0.8));
+        const probe = new THREE.Vector3();
+        outerT:
+        for (let k = 1; k <= steps; k++) {
+          probe.lerpVectors(tp.prev, tp.pos, k / steps);
+          for (const target of activeShips) {
+            if (target === tp.owner || !target.alive) continue;
+            const cd = probe.distanceTo(new THREE.Vector3(target.body.position.x, target.body.position.y, target.body.position.z));
+            if (cd > target.body.boundingRadius + 3) continue;
+            if (damageAt(target, probe.x, probe.y, probe.z, TORP_DAMAGE)) {
+              spawnSplash(probe.x, probe.y, probe.z, 0xffd27f, 22, 1.1);
+              spawnSplash(probe.x, probe.y, probe.z, 0x9fd8e8, 18, 0.9);
+              dead = true;
+              break outerT;
+            }
+          }
+        }
+      }
+      if (dead) { scene.remove(tp.mesh); torpedoes.splice(i, 1); }
+    }
+  }
+
+  function damageAt(ship, wx, wy, wz, amount) {
+    if (!ship.alive) return false;
+    const hitPos = new THREE.Vector3(wx, wy, wz);
+    let best = null, bestD = Infinity;
+    const tmp = new CANNON.Vec3();
+
+    for (const blk of ship.blocks) {
+      if (!blk.alive) continue;
+      ship.body.quaternion.vmult(blk.local, tmp);
+      tmp.vadd(ship.body.position, tmp);
+      const d = hitPos.distanceTo(new THREE.Vector3(tmp.x, tmp.y, tmp.z));
+      blk._d = d;
+      if (d < bestD) { bestD = d; best = blk; }
+    }
+    if (!best || bestD > 2.0) return false;
+
+    // direct hit
+    best.hp -= amount;
+    spawnSplash(wx, wy, wz, 0xff5a2a, 12, 0.7);
+    // splash damage to neighbours
+    for (const blk of ship.blocks) {
+      if (!blk.alive || blk === best) continue;
+      if (blk._d < SPLASH_RADIUS) blk.hp -= SPLASH_DAMAGE * (1 - blk._d / SPLASH_RADIUS);
+    }
+    // destroy everything that dropped to zero
+    for (const blk of ship.blocks) {
+      if (blk.alive && blk.hp <= 0) destroyBlock(ship, blk);
+    }
+    // impulse at the impact point -> real listing from off-centre hits
+    ship.body.applyImpulse(
+      new CANNON.Vec3((Math.random() - 0.5) * 250, -180, (Math.random() - 0.5) * 250),
+      new CANNON.Vec3(wx, wy, wz)
+    );
+    return true;
+  }
+
+  function sinkShip(ship) {
+    if (!ship.alive) return;
+    ship.alive = false;
+    spawnSplash(ship.body.position.x, ship.body.position.y, ship.body.position.z, 0x222222, 30, 1.2);
+  }
+
+  // ============================================================
+  //  AIMING  (power -> predicted impact point)
+  // ============================================================
+  let aimPower = 0.5;                 // 0..1
+  let aimElev = 10 * Math.PI / 180;   // barrel elevation (rad)
+  let aimTrav = 0;                    // barrel traverse (rad)
+  const ELEV_MIN = 0, ELEV_MAX = 42 * Math.PI / 180;
+  const TRAV_LIMIT = 34 * Math.PI / 180;
+  const AI_ELEV = 12 * Math.PI / 180; // AI keeps a fixed elevation and solves power
+
+  function speedFromPower(p) { return SHELL_SPEED_MIN + (SHELL_SPEED_MAX - SHELL_SPEED_MIN) * p; }
+
+  // Local firing direction from barrel angles (ship-local space)
+  function localAimDir(elev, trav) {
+    const ce = Math.cos(elev);
+    return new CANNON.Vec3(Math.sin(trav) * ce, Math.sin(elev), Math.cos(trav) * ce);
+  }
+
+  // World-space muzzle point + direction for a given gun block
+  function gunSolution(ship, gun, elev, trav) {
+    const b = ship.body;
+    const dirL = localAimDir(elev, trav);
+    const dirW = new CANNON.Vec3();
+    b.quaternion.vmult(dirL, dirW);
+    dirW.normalize();
+    // muzzle sits at the barrel tip, so it follows the aim
+    const muzL = new CANNON.Vec3(
+      gun.local.x + dirL.x * B * 0.95,
+      gun.local.y + 0.15 + dirL.y * B * 0.95,
+      gun.local.z + dirL.z * B * 0.95
+    );
+    const muzW = new CANNON.Vec3();
+    b.quaternion.vmult(muzL, muzW);
+    muzW.vadd(b.position, muzW);
+    return { pos: muzW, dir: dirW };
+  }
+
+  // Simulate the exact same ballistics the shell will use.
+  // Returns { point, time } so the AI can lead a moving target.
+  function predictImpact(ship, speed, t, elev, trav) {
+    const gun = ship.blocks.find(b => b.alive && b.isCannon);
+    if (!gun) return null;
+    const sol = gunSolution(ship, gun, elev, trav);
+    const p = new THREE.Vector3(sol.pos.x, sol.pos.y, sol.pos.z);
+    const v = new THREE.Vector3(sol.dir.x, sol.dir.y, sol.dir.z).multiplyScalar(speed);
+    const step = 1 / 60;
+    for (let i = 0; i < 600; i++) {
+      v.y -= G * step * 1.3;
+      p.addScaledVector(v, step);
+      if (p.y < WATER_LEVEL + waveHeight(p.x, p.z, t)) {
+        return { point: p, time: i * step };
+      }
+    }
+    return null;
+  }
+
+  // targeting reticle on the water
+  const reticle = new THREE.Group();
+  const retMat = new THREE.MeshBasicMaterial({ color: 0xf5b342, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthTest: false });
+  const retRing = new THREE.Mesh(new THREE.RingGeometry(1.7, 2.1, 36), retMat);
+  retRing.rotation.x = -Math.PI / 2;
+  reticle.add(retRing);
+  const retRing2 = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.85, 24), retMat);
+  retRing2.rotation.x = -Math.PI / 2;
+  reticle.add(retRing2);
+  for (let i = 0; i < 4; i++) {
+    const tick = new THREE.Mesh(new THREE.PlaneGeometry(0.16, 1.0), retMat);
+    tick.rotation.x = -Math.PI / 2;
+    tick.rotation.z = i * Math.PI / 2;
+    tick.position.set(Math.sin(i * Math.PI / 2) * 2.7, 0, Math.cos(i * Math.PI / 2) * 2.7);
+    reticle.add(tick);
+  }
+  reticle.renderOrder = 999;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // AI picks the power that matches its range to the target
+  function solvePowerForRange(ship, wantDist, t, elev) {
+    let best = 0.5, bestErr = Infinity;
+    for (let p = 0.08; p <= 1.0; p += 0.03) {
+      const hit = predictImpact(ship, speedFromPower(p), t, elev, 0);
+      if (!hit) continue;
+      const d = Math.hypot(hit.point.x - ship.body.position.x, hit.point.z - ship.body.position.z);
+      const err = Math.abs(d - wantDist);
+      if (err < bestErr) { bestErr = err; best = p; }
+    }
+    return { power: best, err: bestErr };
+  }
+
+  // Reachable range band for a ship at its current elevation
+  function rangeBand(ship, t, elev) {
+    const lo = predictImpact(ship, speedFromPower(0.08), t, elev, 0);
+    const hi = predictImpact(ship, speedFromPower(1.0), t, elev, 0);
+    const d = (h) => h ? Math.hypot(h.point.x - ship.body.position.x, h.point.z - ship.body.position.z) : 0;
+    return { min: d(lo), max: d(hi) };
+  }
+
+
+  const keys = {};
+  let playerShip = null, enemyShip = null;
+
+  // power slider
+  const powSlider = document.getElementById('powSlider');
+  const elevSlider = document.getElementById('elevSlider');
+  const travSlider = document.getElementById('travSlider');
+  powSlider.addEventListener('input', () => { aimPower = powSlider.value / 100; });
+  elevSlider.addEventListener('input', () => { aimElev = ELEV_MIN + (ELEV_MAX - ELEV_MIN) * (elevSlider.value / 100); });
+  travSlider.addEventListener('input', () => { aimTrav = TRAV_LIMIT * (travSlider.value / 100); });
+  // stop slider drags from orbiting the camera
+  ['touchstart', 'touchmove', 'touchend', 'mousedown'].forEach(ev => {
+    document.getElementById('aimbar').addEventListener(ev, e => e.stopPropagation());
+    document.getElementById('palette').addEventListener(ev, e => e.stopPropagation());
+  });
+
+  function nudgePower(d) {
+    aimPower = THREE.MathUtils.clamp(aimPower + d, 0, 1);
+    powSlider.value = Math.round(aimPower * 100);
+  }
+  function nudgeElev(deg) {
+    aimElev = THREE.MathUtils.clamp(aimElev + deg * Math.PI / 180, ELEV_MIN, ELEV_MAX);
+    elevSlider.value = Math.round((aimElev - ELEV_MIN) / (ELEV_MAX - ELEV_MIN) * 100);
+  }
+  function nudgeTrav(deg) {
+    aimTrav = THREE.MathUtils.clamp(aimTrav + deg * Math.PI / 180, -TRAV_LIMIT, TRAV_LIMIT);
+    travSlider.value = Math.round(aimTrav / TRAV_LIMIT * 100);
+  }
+  addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (e.code === 'Space' && mode === 'battle' && playerShip) { e.preventDefault(); fire(playerShip); }
+    if (e.code === 'KeyT' && mode === 'battle' && playerShip) { e.preventDefault(); fireTorpedo(playerShip); }
+    if (e.code === 'KeyH' && mode === 'battle' && playerShip) {
+      e.preventDefault();
+      playerShip.autoDepth = !playerShip.autoDepth;
+      if (playerShip.autoDepth) playerShip.targetDepth = shipDepth(playerShip);
+    }
+    if (mode === 'battle') {
+      if (e.code === 'ArrowUp') { e.preventDefault(); nudgeElev(2); }
+      if (e.code === 'ArrowDown') { e.preventDefault(); nudgeElev(-2); }
+      if (e.code === 'ArrowLeft') { e.preventDefault(); nudgeTrav(-2); }
+      if (e.code === 'ArrowRight') { e.preventDefault(); nudgeTrav(2); }
+      if (e.code === 'BracketRight') { e.preventDefault(); nudgePower(0.04); }
+      if (e.code === 'BracketLeft') { e.preventDefault(); nudgePower(-0.04); }
+    }
+  });
+  addEventListener('keyup', e => { keys[e.code] = false; });
+
+  let joyX = 0, joyY = 0, floodHeld = false, blowHeld = false;
+  const trimHeld = { up: false, down: false, left: false, right: false };
+  const isTouch = matchMedia('(pointer: coarse)').matches;
+  const cam = { yaw: 0, pitch: 0.28, dist: 24 };
+  const CAM = { minPitch: -0.25, maxPitch: 1.35, minDist: 8, maxDist: 60 };
+
+  if (isTouch) {
+    const joy = document.getElementById('joy'), nub = document.getElementById('joyNub');
+    let jid = null, jcx = 0, jcy = 0;
+    const R = 46;
+    joy.addEventListener('touchstart', e => {
+      const r = joy.getBoundingClientRect(); jcx = r.left + r.width / 2; jcy = r.top + r.height / 2;
+      jid = e.changedTouches[0].identifier; e.preventDefault();
+    });
+    joy.addEventListener('touchmove', e => {
+      for (const t of e.changedTouches) if (t.identifier === jid) {
+        let dx = t.clientX - jcx, dy = t.clientY - jcy;
+        const d = Math.hypot(dx, dy); if (d > R) { dx *= R / d; dy *= R / d; }
+        nub.style.transform = `translate(${dx}px,${dy}px)`;
+        joyX = dx / R; joyY = dy / R;
+      }
+      e.preventDefault();
+    }, { passive: false });
+    const endJoy = e => { for (const t of e.changedTouches) if (t.identifier === jid) { jid = null; joyX = joyY = 0; nub.style.transform = 'translate(0,0)'; } };
+    joy.addEventListener('touchend', endJoy); joy.addEventListener('touchcancel', endJoy);
+
+    document.getElementById('fireBtn').addEventListener('touchstart', e => { e.preventDefault(); if (playerShip) fire(playerShip); });
+    document.getElementById('torpBtn').addEventListener('touchstart', e => { e.preventDefault(); if (playerShip) fireTorpedo(playerShip); });
+    [['trimUp','up'],['trimDown','down'],['trimLeft','left'],['trimRight','right']].forEach(([id, k]) => {
+      const el = document.getElementById(id);
+      el.addEventListener('touchstart', e => { e.preventDefault(); trimHeld[k] = true; });
+      el.addEventListener('touchend', () => trimHeld[k] = false);
+      el.addEventListener('touchcancel', () => trimHeld[k] = false);
+    });
+    document.getElementById('trimAuto').addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (!playerShip) return;
+      playerShip.autoDepth = !playerShip.autoDepth;
+      if (playerShip.autoDepth) playerShip.targetDepth = shipDepth(playerShip);
+    });
+    const fb = document.getElementById('floodBtn'), bb = document.getElementById('blowBtn');
+    fb.addEventListener('touchstart', e => { e.preventDefault(); floodHeld = true; });
+    fb.addEventListener('touchend', () => floodHeld = false);
+    bb.addEventListener('touchstart', e => { e.preventDefault(); blowHeld = true; });
+    bb.addEventListener('touchend', () => blowHeld = false);
+  }
+
+  // orbit camera + build tap (tap = pointer that moved < 7px)
+  const cnv = renderer.domElement;
+  let dragId = null, lastX = 0, lastY = 0, startX = 0, startY = 0, moved = 0;
+  let pinchId = null, pinchStart = 0, distStart = 0;
+
+  cnv.addEventListener('touchstart', e => {
+    for (const t of e.changedTouches) {
+      if (dragId === null) { dragId = t.identifier; lastX = startX = t.clientX; lastY = startY = t.clientY; moved = 0; }
+      else if (pinchId === null) {
+        pinchId = t.identifier;
+        const a = [...e.touches].find(x => x.identifier === dragId);
+        if (a) { pinchStart = Math.hypot(t.clientX - a.clientX, t.clientY - a.clientY); distStart = cam.dist; }
+      }
+    }
+  }, { passive: true });
+
+  cnv.addEventListener('touchmove', e => {
+    if (pinchId !== null) {
+      const a = [...e.touches].find(x => x.identifier === dragId);
+      const b2 = [...e.touches].find(x => x.identifier === pinchId);
+      if (a && b2 && pinchStart > 0) {
+        const d = Math.hypot(b2.clientX - a.clientX, b2.clientY - a.clientY);
+        cam.dist = THREE.MathUtils.clamp(distStart * (pinchStart / d), CAM.minDist, CAM.maxDist);
+      }
+      return;
+    }
+    for (const t of e.changedTouches) if (t.identifier === dragId) {
+      moved += Math.abs(t.clientX - lastX) + Math.abs(t.clientY - lastY);
+      cam.yaw -= (t.clientX - lastX) * 0.006;
+      cam.pitch = THREE.MathUtils.clamp(cam.pitch + (t.clientY - lastY) * 0.005, CAM.minPitch, CAM.maxPitch);
+      lastX = t.clientX; lastY = t.clientY;
+    }
+  }, { passive: true });
+
+  let lastTouchEnd = 0;
+  const endTouch = e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === dragId) {
+        if (moved < 7) tryEdit(t.clientX, t.clientY);
+        dragId = null;
+      }
+      if (t.identifier === pinchId) pinchId = null;
+    }
+    if (e.touches.length === 0) dragId = pinchId = null;
+    lastTouchEnd = performance.now();
+    // stop the browser's synthetic mouse events, which would place a 2nd block
+    if (e.cancelable) e.preventDefault();
+  };
+  cnv.addEventListener('touchend', endTouch);
+  cnv.addEventListener('touchcancel', endTouch);
+
+  let mouseDown = false, mMoved = 0;
+  const isSyntheticMouse = () => performance.now() - lastTouchEnd < 700;
+  cnv.addEventListener('mousedown', e => {
+    if (isSyntheticMouse()) return;
+    mouseDown = true; lastX = e.clientX; lastY = e.clientY; mMoved = 0;
+  });
+  addEventListener('mouseup', e => {
+    if (isSyntheticMouse()) { mouseDown = false; return; }
+    if (mouseDown && mMoved < 7) tryEdit(e.clientX, e.clientY);
+    mouseDown = false;
+  });
+  addEventListener('mousemove', e => {
+    if (!mouseDown) return;
+    mMoved += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+    cam.yaw -= (e.clientX - lastX) * 0.005;
+    cam.pitch = THREE.MathUtils.clamp(cam.pitch + (e.clientY - lastY) * 0.004, CAM.minPitch, CAM.maxPitch);
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  cnv.addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.dist = THREE.MathUtils.clamp(cam.dist + e.deltaY * 0.02, CAM.minDist, CAM.maxDist);
+  }, { passive: false });
+
+  // ============================================================
+  //  CONTROL + AI
+  // ============================================================
+  function controlPlayer(dt) {
+    const s = playerShip;
+    if (!s || !s.alive) return;
+    const b = s.body;
+    let throttle = 0, steer = 0;
+    if (keys['KeyW']) throttle += 1;
+    if (keys['KeyS']) throttle -= 1;
+    if (keys['KeyA']) steer -= 1;
+    if (keys['KeyD']) steer += 1;
+    if (isTouch) { throttle += -joyY; steer += joyX; }
+
+    const thrust = s.engines * ENGINE_THRUST;
+    if (throttle !== 0 && thrust > 0) {
+      const f = new CANNON.Vec3();
+      b.quaternion.vmult(new CANNON.Vec3(0, 0, thrust * throttle), f);
+      b.applyForce(f, b.position);
+    }
+    const turn = Math.max(s.engines, 1) * TURN_PER_ENGINE;
+    if (steer !== 0 && s.engines > 0) b.torque.y += -steer * turn;
+
+    // ---- depth: AUTO (hold ordered depth) or MANUAL (raw ballast) ----
+    let want = 0;
+    if (keys['KeyQ'] || floodHeld) want += 1;
+    if (keys['KeyE'] || blowHeld) want -= 1;
+    const depthNow = shipDepth(s);
+
+    if (s.ballastTanks === 0) {
+      s.targetDepth = 0;
+      s.ballast = Math.max(0, s.ballast - dt * 0.9);
+    } else if (s.autoDepth) {
+      s.targetDepth = THREE.MathUtils.clamp(s.targetDepth + want * DEPTH_STEP * dt, 0, DEPTH_MAX);
+      if (s.targetDepth < 0.4 && depthNow < 1.2) {
+        s.ballast = Math.max(0, s.ballast - dt * 0.9);
+      } else {
+        const err = s.targetDepth - depthNow;      // + = go deeper
+        const rising = b.velocity.y;               // + = coming up
+        const cmd = THREE.MathUtils.clamp(err * 0.13 + rising * 0.46, -1.5, 1.5);
+        s.ballast = THREE.MathUtils.clamp(s.ballast + cmd * dt * 1.9, 0, 1);
+      }
+    } else {
+      // manual: you flood and blow the tanks yourself
+      s.ballast = THREE.MathUtils.clamp(s.ballast + want * dt * MANUAL_BALLAST_RATE, 0, 1);
+      s.targetDepth = depthNow;
+    }
+
+    // ---- trim: pitch the bow and roll the hull by hand ----
+    // Needs water around the planes, so authority scales with how deep you are.
+    let tPitch = 0, tRoll = 0;
+    if (keys['KeyI'] || trimHeld.up) tPitch += 1;      // bow up
+    if (keys['KeyK'] || trimHeld.down) tPitch -= 1;    // bow down
+    if (keys['KeyJ'] || trimHeld.left) tRoll += 1;     // roll port
+    if (keys['KeyL'] || trimHeld.right) tRoll -= 1;    // roll starboard
+
+    s.trimCmd = { pitch: tPitch, roll: tRoll, auth: 0 };
+    if (tPitch !== 0 || tRoll !== 0) {
+      const auth = THREE.MathUtils.clamp(depthNow / 1.6, 0, 1);   // no planes in air
+      s.trimCmd.auth = auth;
+      if (auth > 0.02) {
+        const right = new CANNON.Vec3(), fwdAx = new CANNON.Vec3();
+        b.quaternion.vmult(new CANNON.Vec3(1, 0, 0), right);
+        b.quaternion.vmult(new CANNON.Vec3(0, 0, 1), fwdAx);
+        const mp = tPitch * TRIM_PITCH_TORQUE * auth;
+        const mr = tRoll * TRIM_ROLL_TORQUE * auth;
+        // Strip the vertical component: trimming should never change heading.
+        // Without this, pitching a tilted hull bled into yaw and the boat
+        // quietly wandered off course.
+        b.torque.x += right.x * mp + fwdAx.x * mr;
+        b.torque.z += right.z * mp + fwdAx.z * mr;
+      }
+    }
+  }
+
+  function enemyAI(dt) {
+    const s = enemyShip;
+    if (!s || !s.alive || !playerShip || !playerShip.alive) return;
+    const e = s.body, p = playerShip.body;
+    const dx = p.position.x - e.position.x, dz = p.position.z - e.position.z;
+    const dist = Math.hypot(dx, dz);
+
+    // --- know your own gun range (recomputed a few times a second) ---
+    s._rangeTimer = (s._rangeTimer || 0) - dt;
+    if (s._rangeTimer <= 0 || !s.band) {
+      s.band = rangeBand(s, aiClock, AI_ELEV);
+      s._rangeTimer = 0.4;
+    }
+    const band = s.band;
+    // sweet spot: comfortably inside max range so it always has a solution
+    const idealMin = band.min * 1.25;
+    const idealMax = band.max * 0.80;
+
+    // --- lead the target: aim where the player WILL be ---
+    const sol0 = solvePowerForRange(s, dist, aiClock, AI_ELEV);
+    const flight = predictImpact(s, speedFromPower(sol0.power), aiClock, AI_ELEV, 0);
+    const tof = flight ? flight.time : dist / 70;
+    const leadX = p.position.x + p.velocity.x * tof;
+    const leadZ = p.position.z + p.velocity.z * tof;
+    const aimDist = Math.hypot(leadX - e.position.x, leadZ - e.position.z);
+    const targetAng = Math.atan2(leadX - e.position.x, leadZ - e.position.z);
+
+    // heading error
+    const fwd = new CANNON.Vec3(); e.quaternion.vmult(new CANNON.Vec3(0, 0, 1), fwd);
+    const curAng = Math.atan2(fwd.x, fwd.z);
+    let da = targetAng - curAng;
+    while (da > Math.PI) da -= 2 * Math.PI;
+    while (da < -Math.PI) da += 2 * Math.PI;
+    e.torque.y += da * Math.max(s.engines, 1) * TURN_PER_ENGINE * 1.4;
+
+    // --- manoeuvre into its own effective range ---
+    let fwdForce;
+    if (dist > idealMax) fwdForce = 1;          // too far: close in
+    else if (dist < idealMin) fwdForce = -0.6;  // too close: back off
+    else fwdForce = 0.15;                       // hold station
+    const ef = new CANNON.Vec3();
+    e.quaternion.vmult(new CANNON.Vec3(0, 0, s.engines * ENGINE_THRUST * fwdForce), ef);
+    e.applyForce(ef, e.position);
+
+    // --- fire only with a valid solution, corrected by observed misses ---
+    s.aimBias = s.aimBias || 1;
+    const wanted = aimDist * s.aimBias;
+    if (s.reload <= 0 && Math.abs(da) < 0.22 && wanted <= band.max && wanted >= band.min) {
+      const sol = solvePowerForRange(s, wanted, aiClock, AI_ELEV);
+      if (sol.err < 12) {
+        fire(s, {
+          speed: speedFromPower(sol.power),
+          elev: AI_ELEV,
+          spot: { shooter: s, from: new THREE.Vector3(e.position.x, e.position.y, e.position.z), wanted: aimDist }
+        });
+      }
+    }
+  }
+
+  // Shell landed in the water: let the shooter correct its next shot.
+  function spotCorrection(sh, impact) {
+    if (!sh.spot || !sh.spot.shooter || !sh.spot.shooter.alive) return;
+    const shooter = sh.spot.shooter;
+    const flew = Math.hypot(impact.x - sh.spot.from.x, impact.z - sh.spot.from.z);
+    if (flew < 5) return;
+    const ratio = sh.spot.wanted / flew;   // >1 = fell short, <1 = overshot
+    shooter.aimBias = THREE.MathUtils.clamp(
+      (shooter.aimBias || 1) * THREE.MathUtils.clamp(ratio, 0.8, 1.25),
+      0.55, 1.8
+    );
+  }
+
+  // ============================================================
+  //  MODE MANAGEMENT
+  // ============================================================
+  let mode = 'build', gameOver = false, aiClock = 0;
+
+  function enterBuild() {
+    mode = 'build'; gameOver = false;
+    clearShips();
+    playerShip = enemyShip = null;
+    shells.forEach(s => scene.remove(s.mesh)); shells.length = 0;
+    torpedoes.forEach(x => scene.remove(x.mesh)); torpedoes.length = 0;
+    parts.forEach(p => scene.remove(p.mesh)); parts.length = 0;
+
+    buildGroup.visible = true; grid.visible = true;
+    reticle.visible = false;
+    document.getElementById('heelWarn').classList.remove('show');
+    document.getElementById('buildUI').classList.remove('hidden');
+    document.getElementById('battleUI').classList.add('hidden');
+    document.getElementById('battleStat').style.display = 'none';
+    document.getElementById('modeTag').textContent = 'Shipyard';
+    document.getElementById('toast').className = '';
+    document.getElementById('endBtns').classList.remove('show');
+    document.getElementById('centerbox').classList.remove('compact');
+    clearTimeout(toastTimer);
+    if (isTouch) document.getElementById('touch').style.display = 'none';
+    cam.yaw = 0.6; cam.pitch = 0.5; cam.dist = 22;
+    rebuildBuildView();
+  }
+
+  function enterBattle() {
+    const s = designStats(playerDesign);
+    if (s.count === 0 || !s.connected) return;
+    mode = 'battle'; gameOver = false;
+
+    buildGroup.visible = false; grid.visible = false;
+    document.getElementById('buildUI').classList.add('hidden');
+    document.getElementById('battleUI').classList.remove('hidden');
+    document.getElementById('battleStat').style.display = '';
+    document.getElementById('modeTag').textContent = 'Battle';
+    document.getElementById('toast').className = '';
+    document.getElementById('endBtns').classList.remove('show');
+    document.getElementById('centerbox').classList.remove('compact');
+    clearTimeout(toastTimer);
+    if (isTouch) {
+      document.getElementById('touch').style.display = 'block';
+      document.getElementById('keys').style.display = 'none';
+    }
+
+    playerShip = compileShip(playerDesign, 0, 0, 0, true);
+    enemyShip = compileShip(enemyDesign(), 70, 60, Math.PI, false);
+    aimPower = 0.5; powSlider.value = 50;
+    aimElev = 10 * Math.PI / 180; elevSlider.value = Math.round((aimElev - ELEV_MIN) / (ELEV_MAX - ELEV_MIN) * 100);
+    aimTrav = 0; travSlider.value = 0;
+    cam.yaw = 0; cam.pitch = 0.28; cam.dist = 24;
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    playerDesign = starterDesign();
+    rebuildBuildView();
+  });
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    playerDesign = new Map();
+    rebuildBuildView();
+  });
+  document.getElementById('sailBtn').addEventListener('click', enterBattle);
+  document.getElementById('rebuildBtn').addEventListener('click', enterBuild);
+  document.getElementById('rematchBtn').addEventListener('click', () => { enterBuild(); enterBattle(); });
+
+  let toastTimer = null;
+  function showToast(text, cls) {
+    const t = document.getElementById('toast');
+    t.textContent = text; t.className = 'show ' + cls;
+    document.getElementById('endBtns').classList.add('show');
+    // slide it aside after a moment so it doesn't block the view
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => document.getElementById('centerbox').classList.add('compact'), 2600);
+  }
+
+  // ============================================================
+  //  MAIN LOOP
+  // ============================================================
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    let dt = (now - last) / 1000; last = now;
+    if (dt > 0.05) dt = 0.05;
+    const t = now / 1000;
+
+    // animate ocean around focus
+    const focus = (mode === 'battle' && playerShip) ? playerShip.body.position : { x: 0, z: 0 };
+    // Move the sheet FIRST, then build the waves from world coordinates, so the
+    // surface you see is exactly the surface the physics and camera use.
+    water.position.x = focus.x; water.position.z = focus.z;
+    deep.position.x = focus.x; deep.position.z = focus.z;
+    const pos = waterGeo.attributes.position.array;
+    for (let i = 0; i < pos.length; i += 3) {
+      pos[i + 1] = waveHeight(basePos[i] + focus.x, basePos[i + 2] + focus.z, t);
+    }
+    waterGeo.attributes.position.needsUpdate = true;
+    waterGeo.computeVertexNormals();
+    rippleMap.offset.set(t * 0.006, t * 0.004);
+
+    if (mode === 'battle') {
+      aiClock = t;
+      // the player keeps helm control after the battle is decided
+      controlPlayer(dt);
+      if (!gameOver) enemyAI(dt);
+      activeShips.forEach(s => {
+        if (s.reload > 0) s.reload -= dt;
+        if (s.torpReload > 0) s.torpReload -= dt;
+        updateFlooding(s, dt);
+        applyBuoyancy(s, t);
+      });
+      updateTorpedoes(dt, t);
+
+      // dive planes deflect with your trim input
+      for (const sh of activeShips) {
+        if (!sh.planes) continue;
+        const cmd = sh.trimCmd || { pitch: 0, roll: 0 };
+        const wantX = -cmd.pitch * 0.55;
+        const wantZ = cmd.roll * 0.35;
+        sh.planes.rotation.x += (wantX - sh.planes.rotation.x) * Math.min(1, dt * 9);
+        sh.planes.rotation.z += (wantZ - sh.planes.rotation.z) * Math.min(1, dt * 9);
+      }
+
+      // lamps brighten as the water darkens
+      const lampDepth = THREE.MathUtils.clamp(
+        ((WATER_LEVEL + waveHeight(camera.position.x, camera.position.z, t)) - camera.position.y) / 25, 0, 1);
+      for (const sh of activeShips) {
+        for (const blk of sh.blocks) {
+          if (blk.light) blk.light.intensity = 0.3 + lampDepth * 6.5;
+          if (blk.halo) blk.halo.material.opacity = 0.12 + lampDepth * 0.8;
+        }
+      }
+      world.step(1 / 60, dt, 3);
+      activeShips.forEach(s => {
+        s.group.position.copy(s.body.position);
+        s.group.quaternion.copy(s.body.quaternion);
+        // A ship is lost when it has no blocks left, or it can no longer
+        // float and has gone properly under. This is emergent, not an HP bar.
+        if (s.alive) {
+          // must be doomed AND properly under for a while - no early calls
+          const doomed = !s.buoyant && s.body.position.y < -14;
+          s.sinkTimer = doomed ? (s.sinkTimer || 0) + dt : 0;
+          if (s.liveCount === 0) sinkShip(s);
+          else if (s.sinkTimer > 2.5) sinkShip(s);
+          else if (s.body.position.y < SEABED + 12) sinkShip(s);
+        }
+      });
+
+      // debris
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i];
+        const surf = WATER_LEVEL + waveHeight(d.mesh.position.x, d.mesh.position.z, t);
+        if (d.mesh.position.y < surf) {
+          d.vel.multiplyScalar(Math.pow(0.25, dt));
+          d.vel.y -= G * dt * 0.25;
+        } else {
+          d.vel.y -= G * dt;
+        }
+        d.mesh.position.addScaledVector(d.vel, dt);
+        d.mesh.rotation.x += d.spin.x * dt;
+        d.mesh.rotation.y += d.spin.y * dt;
+        d.life -= dt;
+        if (d.life < 1) d.mesh.material.opacity = Math.max(0, d.life);
+        if (d.life <= 0) { scene.remove(d.mesh); debris.splice(i, 1); }
+      }
+
+      // shells
+      for (let i = shells.length - 1; i >= 0; i--) {
+        const sh = shells[i];
+        const surf = WATER_LEVEL + waveHeight(sh.pos.x, sh.pos.z, t);
+        const underwater = sh.pos.y < surf;
+        if (underwater) {
+          if (!sh.wet) {
+            sh.wet = true;
+            spawnSplash(sh.pos.x, surf, sh.pos.z, 0x9fd8e8, 10, 0.7);
+            spotCorrection(sh, sh.pos);   // shooter observes the splash and adjusts
+          }
+          sh.vel.multiplyScalar(Math.pow(0.06, dt));
+          sh.vel.y -= G * dt * 0.35;
+          if (Math.random() < 0.4) spawnSplash(sh.pos.x, sh.pos.y, sh.pos.z, 0xbfe8f0, 1, 0.2);
+        } else {
+          sh.vel.y -= G * dt * 1.3;
+        }
+        sh.prev.copy(sh.pos);
+        sh.pos.addScaledVector(sh.vel, dt);
+        sh.mesh.position.copy(sh.pos);
+        sh.life -= dt;
+
+        let dead = sh.life <= 0;
+        if (underwater && sh.vel.lengthSq() < 9) dead = true;
+        if (sh.pos.y < SEABED + 0.5) { spawnSplash(sh.pos.x, SEABED + 0.5, sh.pos.z, 0x3a4d40, 6, 0.4); dead = true; }
+
+        if (!dead) {
+          const travel = sh.prev.distanceTo(sh.pos);
+          const steps = Math.max(1, Math.ceil(travel / 0.8));
+          const probe = new THREE.Vector3();
+          outer:
+          for (let k = 1; k <= steps; k++) {
+            probe.lerpVectors(sh.prev, sh.pos, k / steps);
+            for (const target of activeShips) {
+              if (target === sh.owner || !target.alive) continue;
+              const cd = probe.distanceTo(new THREE.Vector3(target.body.position.x, target.body.position.y, target.body.position.z));
+              if (cd > target.body.boundingRadius + 3) continue;
+              if (damageAt(target, probe.x, probe.y, probe.z, SHELL_DAMAGE * (underwater ? 0.6 : 1))) {
+                dead = true;
+                break outer;
+              }
+            }
+          }
+        }
+        if (dead) { scene.remove(sh.mesh); shells.splice(i, 1); }
+      }
+    }
+
+    // particles
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      p.vel.y -= G * dt;
+      p.mesh.position.addScaledVector(p.vel, dt);
+      p.life -= dt;
+      p.mesh.material.opacity = Math.max(0, p.life);
+      p.mesh.scale.setScalar(Math.max(0.1, p.life));
+      if (p.life <= 0) { scene.remove(p.mesh); parts.splice(i, 1); }
+    }
+
+    // ---- camera ----
+    let target, heading = 0;
+    if (mode === 'battle' && playerShip) {
+      const pb = playerShip.body;
+      const camFwd = new CANNON.Vec3(); pb.quaternion.vmult(new CANNON.Vec3(0, 0, 1), camFwd);
+      heading = Math.atan2(camFwd.x, camFwd.z);
+      target = new THREE.Vector3(pb.position.x, pb.position.y + 1.5, pb.position.z);
+    } else {
+      target = new THREE.Vector3(0, 2.5, 0);
+    }
+    const ang = heading + cam.yaw;
+    const horiz = Math.cos(cam.pitch) * cam.dist;
+    const vert = Math.sin(cam.pitch) * cam.dist;
+    camera.position.lerp(new THREE.Vector3(
+      target.x - Math.sin(ang) * horiz,
+      target.y + vert + 0.5,
+      target.z - Math.cos(ang) * horiz
+    ), 1 - Math.pow(0.0015, dt));
+
+    // ---- keep the camera out of geometry ----
+    // 1) never sink into (or below) the seabed
+    const bedTop = SEABED + 5;           // seabed mesh bumps up to ~+3
+    if (camera.position.y < bedTop) camera.position.y = bedTop;
+
+    // 2) don't sit exactly in the water plane, which slices the view in half
+    const camSurf = WATER_LEVEL + waveHeight(camera.position.x, camera.position.z, t);
+    const band = 0.7;
+    const dSurf = camera.position.y - camSurf;
+    if (Math.abs(dSurf) < band) camera.position.y = camSurf + (dSurf >= 0 ? band : -band);
+
+    camera.lookAt(target);
+
+    // ---- depth-scaled darkness ----
+    const camDepth = (WATER_LEVEL + waveHeight(camera.position.x, camera.position.z, t)) - camera.position.y;
+    deep.visible = camDepth > 0;
+
+    // ---- sunlight shafts, only in the sunlit layer ----
+    // fade in just below the surface, gone by ~30 m
+    const sunVis = camDepth > 0
+      ? Math.min(1, camDepth / 2.0) * Math.max(0, 1 - camDepth / 30)
+      : 0;
+    sunGroup.visible = sunVis > 0.01;
+    if (sunGroup.visible) {
+      const surfHere = WATER_LEVEL + waveHeight(camera.position.x, camera.position.z, t);
+      sunGroup.position.set(camera.position.x, surfHere, camera.position.z);
+      // keep the window just under the surface, otherwise the water plane occludes it
+      glow.position.y = -1.1;
+      // lean the whole fan toward the sun
+      sunGroup.rotation.y = Math.atan2(sun.position.x, sun.position.z) + Math.sin(t * 0.12) * 0.12;
+      shaftMat.opacity = 0.7 * sunVis;
+      glowMat.opacity = Math.min(1, 1.6 * sunVis);
+      // shimmer: each blade breathes at its own pace
+      for (const bl of blades) {
+        bl.scale.x = bl.userData.baseX * (1 + Math.sin(t * 1.3 + bl.userData.phase) * 0.28);
+      }
+      glow.scale.setScalar(1 + Math.sin(t * 0.8) * 0.06);
+    }
+
+    if (camDepth > 0) {
+      const f = THREE.MathUtils.clamp(camDepth / DARK_DEPTH, 0, 1);
+      const col = new THREE.Color(0x1b5470).lerp(new THREE.Color(0x000205), Math.pow(f, 0.7));
+      scene.fog.color.copy(col);
+      scene.fog.density = 0.012 + f * 0.026;   // murky, but you can still see your hull
+      renderer.setClearColor(col);
+      sun.intensity = 1.15 * Math.max(0, 1 - f * 1.15);
+      hemi.intensity = 0.65 * Math.max(0.02, 1 - f * 1.2);
+      amb.intensity = 0.4 * Math.max(0.03, 1 - f * 1.1);
+    } else {
+      scene.fog.color.setHex(0x9fc4d8); scene.fog.density = 0.0028;
+      renderer.setClearColor(0x9fc4d8);
+      sun.intensity = 1.15; hemi.intensity = 0.65; amb.intensity = 0.4;
+    }
+
+    // ---- battle HUD ----
+    if (mode === 'battle' && playerShip) {
+      const pb = playerShip.body;
+      const hullP = Math.round(playerShip.liveCount / playerShip.initialBlocks * 100);
+      document.getElementById('hullPct').textContent = hullP + '%';
+      document.getElementById('hullFill').style.width = hullP + '%';
+      document.getElementById('hullFill').style.background = (!playerShip.buoyant) ? 'linear-gradient(90deg,#c8392f,#e8453c)' : (hullP < 50 ? 'linear-gradient(90deg,#c8842f,#f5b342)' : 'linear-gradient(90deg,#3fa34d,#7ddc8a)');
+
+      const balP = Math.round(playerShip.ballast * 100);
+      document.getElementById('ballastPct').textContent = balP + '%';
+      document.getElementById('ballastFill').style.width = balP + '%';
+      document.getElementById('ordDepth').textContent =
+        playerShip.ballastTanks === 0 ? 'no tanks' : playerShip.targetDepth.toFixed(0) + ' m';
+
+      // water intake + heel
+      const flP = Math.round(playerShip.flooding * 100);
+      document.getElementById('floodPct').textContent = flP + '%';
+      document.getElementById('floodFill').style.width = flP + '%';
+      document.getElementById('floodFill').style.background = flP > 60
+        ? 'linear-gradient(90deg,#c8392f,#e8453c)'
+        : (flP > 25 ? 'linear-gradient(90deg,#c8842f,#f5b342)' : 'linear-gradient(90deg,#2f7fc8,#6fd0e0)');
+      document.getElementById('floodRow').classList.toggle('crit', flP > 60);
+
+      // attitude: signed pitch and roll
+      const qb = playerShip.body.quaternion;
+      const fwdA = new CANNON.Vec3(), rightA = new CANNON.Vec3();
+      qb.vmult(new CANNON.Vec3(0, 0, 1), fwdA);
+      qb.vmult(new CANNON.Vec3(1, 0, 0), rightA);
+      const pitchDeg = Math.asin(THREE.MathUtils.clamp(fwdA.y, -1, 1)) * 180 / Math.PI;
+      const rollDeg = Math.asin(THREE.MathUtils.clamp(rightA.y, -1, 1)) * 180 / Math.PI;
+      document.getElementById('pitchVal').textContent = (pitchDeg >= 0 ? '+' : '') + pitchDeg.toFixed(0) + '°';
+      document.getElementById('rollVal').textContent = (rollDeg >= 0 ? '+' : '') + rollDeg.toFixed(0) + '°';
+      const hz = document.getElementById('horizonLine');
+      hz.style.transform = 'translateY(' + (-50 + pitchDeg * 0.9) + '%) rotate(' + (-rollDeg) + 'deg)';
+      // is trim input actually biting?
+      const tc = playerShip.trimCmd || { pitch: 0, roll: 0, auth: 0 };
+      const pressing = tc.pitch !== 0 || tc.roll !== 0;
+      const ps = document.getElementById('planeState');
+      document.getElementById('horizonBox').classList.toggle('trimming', pressing && tc.auth > 0.02);
+      if (!pressing) {
+        ps.textContent = 'Planes idle';
+        ps.className = '';
+      } else if (tc.auth <= 0.02) {
+        ps.textContent = 'No flow — dive first';
+        ps.className = 'noflow';
+      } else {
+        const dir = tc.pitch > 0 ? 'BOW UP' : tc.pitch < 0 ? 'BOW DOWN' : (tc.roll > 0 ? 'ROLL PORT' : 'ROLL STBD');
+        ps.textContent = dir + ' ' + Math.round(tc.auth * 100) + '%';
+        ps.className = 'active';
+      }
+
+      const tm = document.getElementById('trimMode');
+      const manual = !playerShip.autoDepth;
+      tm.textContent = manual ? 'MANUAL TRIM' : 'AUTO DEPTH';
+      tm.classList.toggle('man', manual);
+      if (isTouch) {
+        const tp = document.getElementById('trimPad');
+        tp.classList.toggle('show', playerShip.ballastTanks > 0);
+        document.getElementById('trimAuto').classList.toggle('man', manual);
+      }
+
+      const heel = Math.round(playerShip.tiltDeg || 0);
+      document.getElementById('heelVal').textContent = heel + '°';
+      document.getElementById('heelLimit').textContent = Math.round(playerShip.capsizeAngle) + '°';
+      const overLimit = playerShip.tiltDeg > playerShip.capsizeAngle;
+      document.getElementById('heelVal').style.color = overLimit ? '#e8453c' : (heel > playerShip.capsizeAngle * 0.7 ? '#f5b342' : '');
+      const hw = document.getElementById('heelWarn');
+      hw.classList.toggle('show', overLimit && playerShip.alive);
+      if (playerShip.engines === 0 && playerShip.flooding > 0.05) {
+        hw.querySelector('small').textContent = 'Pumps dead — engines destroyed';
+        hw.classList.add('show');
+      } else {
+        hw.querySelector('small').textContent = "Straighten up or you'll capsize";
+      }
+
+      document.getElementById('depthVal').textContent = Math.max(0, WATER_LEVEL - pb.position.y).toFixed(1);
+
+      // ---- barrels follow the aim ----
+      for (const blk of playerShip.blocks) {
+        if (!blk.alive || !blk.isCannon) continue;
+        const tp = blk.mesh.userData.traversePivot, ep = blk.mesh.userData.elevPivot;
+        if (tp) tp.rotation.y = aimTrav;
+        if (ep) ep.rotation.x = -aimElev;
+      }
+      if (enemyShip && enemyShip.alive) {
+        for (const blk of enemyShip.blocks) {
+          if (!blk.alive || !blk.isCannon) continue;
+          const ep = blk.mesh.userData.elevPivot;
+          if (ep) ep.rotation.x = -AI_ELEV;
+        }
+      }
+
+      // ---- targeting reticle ----
+      document.getElementById('powVal').textContent = Math.round(aimPower * 100) + '%';
+      document.getElementById('elevVal').textContent = Math.round(aimElev * 180 / Math.PI) + '°';
+      document.getElementById('travVal').textContent = (aimTrav >= 0 ? '+' : '') + Math.round(aimTrav * 180 / Math.PI) + '°';
+      const canAim = playerShip.alive && playerShip.cannons > 0 && shipDepth(playerShip) <= CANNON_MAX_DEPTH;
+      if (canAim) {
+        const hitR = predictImpact(playerShip, speedFromPower(aimPower), t, aimElev, aimTrav);
+        const hit = hitR ? hitR.point : null;
+        if (hit) {
+          reticle.visible = true;
+          reticle.position.set(hit.x, hit.y + 0.15, hit.z);
+          const pulse = 1 + Math.sin(t * 4) * 0.04;
+          reticle.scale.setScalar(pulse);
+          const rng = Math.hypot(hit.x - pb.position.x, hit.z - pb.position.z);
+          document.getElementById('rangeVal').textContent = Math.round(rng) + 'm';
+          // turn red when the shot would land on an enemy
+          let onTarget = false;
+          if (enemyShip && enemyShip.alive) {
+            const ed = Math.hypot(hit.x - enemyShip.body.position.x, hit.z - enemyShip.body.position.z);
+            onTarget = ed < 5;
+          }
+          retMat.color.setHex(onTarget ? 0x7ddc8a : 0xf5b342);
+        } else {
+          reticle.visible = false;
+          document.getElementById('rangeVal').textContent = '—';
+        }
+      } else {
+        reticle.visible = false;
+        document.getElementById('rangeVal').textContent = '—';
+      }      document.getElementById('subBadge').classList.toggle('on', shipDepth(playerShip) > TORP_MIN_DEPTH);
+      if (enemyShip) document.getElementById('enemyHull').textContent = Math.max(0, Math.round(enemyShip.liveCount / enemyShip.initialBlocks * 100));
+
+      // torpedo readout
+      const trow = document.getElementById('torpRow');
+      if (playerShip.torpedoes > 0) {
+        trow.style.display = '';
+        const tl = document.getElementById('torpLabel');
+        if (playerShip.torpReload > 0) {
+          document.getElementById('torpFill').style.width = ((1 - playerShip.torpReload / playerShip.torpReloadMax) * 100) + '%';
+          tl.textContent = 'Torpedo Reloading';
+          tl.style.color = '#8fa4ae';
+        } else if (shipDepth(playerShip) < TORP_MIN_DEPTH) {
+          document.getElementById('torpFill').style.width = '100%';
+          tl.textContent = 'Dive To Launch';
+          tl.style.color = '#f5b342';
+        } else {
+          document.getElementById('torpFill').style.width = '100%';
+          tl.textContent = 'Torpedo Ready';
+          tl.style.color = '#78dcbe';
+        }
+      } else {
+        trow.style.display = 'none';
+      }
+      if (isTouch) {
+        document.getElementById('torpBtn').classList.toggle('show', playerShip.torpedoes > 0);
+      }
+
+      const relEl = document.getElementById('reload');
+      if (playerShip.cannons === 0) {
+        document.getElementById('reloadFill').style.width = '0%';
+        document.getElementById('reloadLabel').textContent = 'Cannons Destroyed';
+        relEl.classList.remove('ready');
+      } else if (playerShip.reload > 0 && playerShip.reloadMax) {
+        document.getElementById('reloadFill').style.width = ((1 - playerShip.reload / playerShip.reloadMax) * 100) + '%';
+        document.getElementById('reloadLabel').textContent = 'Reloading';
+        relEl.classList.remove('ready');
+      } else {
+        const blocked = shipDepth(playerShip) > CANNON_MAX_DEPTH;
+        document.getElementById('reloadFill').style.width = '100%';
+        document.getElementById('reloadLabel').textContent = blocked ? 'Too Deep To Fire' : 'Weapon Ready';
+        relEl.classList.toggle('ready', !blocked);
+      }
+
+      if (!gameOver) {
+        if (enemyShip && !enemyShip.alive) { gameOver = true; showToast('Enemy Sunk', 'win'); }
+        else if (!playerShip.alive) { gameOver = true; showToast('You Sank', 'lose'); }
+      }
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  enterBuild();
+  setTimeout(() => { document.getElementById('loader').style.display = 'none'; }, 350);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

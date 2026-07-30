@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Hull &amp; Havoc — Shipyard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+</head>
+<body>
+  <div id="loader">
+    <div class="l1">HULL &amp; <b>HAVOC</b></div>
+    <div class="spinner"></div>
+  </div>
+
+  <!-- The engine appends its own <canvas> here and owns it outright.
+       The UI layer never renders into, or reads from, this element. -->
+  <div id="stage"></div>
+
+  <!-- Every piece of DOM UI lives under this root. Phase 1 injects the
+       extracted HUD markup here; Phase 3 mounts React at the same point. -->
+  <div id="ui"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
