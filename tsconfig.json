@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // "node" is here because the engine physics tests genuinely run in Node
+    // (vitest `environment: 'node'`) and vite.config.ts uses node: builtins.
+    "types": ["vite/client", "node"],
+
+    /* Strictness. The prototype leaned on implicit any and ad-hoc object
+       shapes; these are the settings that turn that into a type error. */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+
+    // No `baseUrl` — it's deprecated as of TS 7. With moduleResolution
+    // "bundler", paths resolve relative to this file.
+    "paths": {
+      "@engine/*": ["./src/engine/*"],
+      "@ui/*": ["./src/ui/*"],
+      "@game/*": ["./src/game/*"]
+    }
+  },
+  "include": ["src", "tests", "vite.config.ts", "eslint.config.js"],
+  "exclude": ["legacy", "node_modules", "dist"]
+}

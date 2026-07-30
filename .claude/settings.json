@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(pnpm test)",
+      "PowerShell(pnpm test 2>&1)",
+      "PowerShell(pnpm check 2>&1 | Select-Object -Last 14; Write-Host \"`n=== structure ===\"; Get-ChildItem -Recurse -File -Path src,tests | Where-Object { $_.Extension -in '.ts','.css','.html' } | ForEach-Object { $_.FullName.Replace\\(\"$PWD\\\\\",\"\"\\) } | Sort-Object)"
+    ]
+  }
+}
