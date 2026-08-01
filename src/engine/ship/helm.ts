@@ -7,7 +7,7 @@
  * controller and the trim axes testable in Node with no browser.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import {
   DEPTH_HOLD_BALLAST_RATE,
@@ -41,10 +41,12 @@ const _Z = new CANNON.Vec3(0, 0, 1);
 /**
  * Engine thrust and rudder.
  *
- * Thrust is applied at `body.position` — the centre of mass — precisely so it
- * does not induce rotation. In cannon 0.6.2 `applyForce`'s second argument is
- * a *world* point; passing the origin instead of the body position was an
- * early source of runaway torque.
+ * Thrust is applied at the centre of mass, precisely so it does not induce
+ * rotation. In cannon-es `applyForce`'s second argument is a point *relative
+ * to* the centre of mass and defaults to zero, so omitting it is exactly what
+ * we want. (Under cannon 0.6.2 that argument was a *world* point and this call
+ * passed `body.position`; passing the origin there instead was an early source
+ * of runaway torque.)
  *
  * @param throttle -1..1, positive ahead
  * @param steer    -1..1, positive to starboard
@@ -56,15 +58,17 @@ export function applyThrust(ship: Ship, throttle: number, steer: number): void {
   if (throttle !== 0 && thrust > 0) {
     _localFwd.set(0, 0, thrust * throttle);
     b.quaternion.vmult(_localFwd, _thrust);
-    b.applyForce(_thrust, b.position);
+    b.applyForce(_thrust);
   }
 
   // A dead-in-the-water hull still has a rudder, but no engines means no
   // steering authority at all.
   const turn = Math.max(ship.engines, 1) * TURN_PER_ENGINE;
   if (steer !== 0 && ship.engines > 0) {
-    // cannon 0.6.2 has no applyTorque(); accumulate directly. The solver
-    // clears body.torque each step.
+    // cannon-es does have applyTorque(), but accumulating directly stays
+    // allocation-free on the hot path and matches applyTrim below, which has
+    // to write individual components anyway. The solver clears body.torque
+    // each step either way.
     b.torque.y += -steer * turn;
   }
 }

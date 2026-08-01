@@ -21,12 +21,9 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
   },
-  optimizeDeps: {
-    // cannon 0.6.2 predates ESM and ships a UMD bundle; Vite needs to
-    // pre-bundle it into an importable module. Removed in Phase 2 when we
-    // move to cannon-es, which is ESM already.
-    include: ['cannon'],
-  },
+  // No `optimizeDeps.include` for the physics engine: cannon 0.6.2 predated
+  // ESM and shipped a UMD bundle Vite had to pre-bundle by hand. cannon-es is
+  // ESM already and needs no help.
   build: {
     target: 'es2022',
     sourcemap: true,

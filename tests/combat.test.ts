@@ -5,7 +5,7 @@
  * simulation, so guns, torpedoes and damage can be exercised in Node.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 import { describe, expect, it } from 'vitest';
 
 import { AI_ELEV, CANNON_MAX_DEPTH, SHELL_DAMAGE, TORP_MIN_DEPTH } from '../src/engine/constants';

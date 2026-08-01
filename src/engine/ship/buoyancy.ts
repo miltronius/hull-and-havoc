@@ -6,7 +6,7 @@
  * drawn here.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import {
   ANGULAR_DAMP,
@@ -29,6 +29,7 @@ export function shipDepth(ship: Ship): number {
 
 // Scratch vectors, reused every frame to keep the hot path allocation-free.
 const _wp = new CANNON.Vec3();
+const _rel = new CANNON.Vec3();
 const _up = new CANNON.Vec3();
 const _force = new CANNON.Vec3();
 const _localUp = new CANNON.Vec3(0, 1, 0);
@@ -45,6 +46,15 @@ const _localUp = new CANNON.Vec3(0, 1, 0);
  *    invisible on the surface — waves average it out as points enter and
  *    leave the water — but becomes a constant yaw the moment the boat is
  *    fully submerged and every point is wet at once.
+ *
+ * cannon-es note: `applyForce`'s second argument is a point *relative to the
+ * centre of mass*, the opposite of cannon 0.6.2, where it was a world point.
+ * So the sample point is used in two different frames here — `_rel` (the
+ * rotated block offset) is what the force is applied at, and `_wp` (that same
+ * offset plus the body position) is what the wave field is sampled at. Passing
+ * `_wp` to `applyForce` would apply every lift force an entire ship-position
+ * away from the hull, which looks plausible right up until you sail away from
+ * the origin and the boat tears itself apart.
  */
 export function applyBuoyancy(ship: Ship, t: number, waves: WaveField = waveHeight): void {
   const b = ship.body;
@@ -59,14 +69,16 @@ export function applyBuoyancy(ship: Ship, t: number, waves: WaveField = waveHeig
     const half = blk.lift / 2;
     for (const sp of [blk.s1, blk.s2]) {
       total++;
-      b.quaternion.vmult(sp, _wp);
-      _wp.vadd(b.position, _wp);
+      // _rel: offset from the centre of mass. _wp: the same point in world
+      // space, which is the frame the wave field is defined in.
+      b.quaternion.vmult(sp, _rel);
+      _rel.vadd(b.position, _wp);
       const depth = WATER_LEVEL + waves(_wp.x, _wp.z, t) - _wp.y;
       if (depth > 0) {
         wet++;
         const submersion = Math.min(depth, 1.0);
         _force.set(0, submersion * half * floatPower, 0);
-        b.applyForce(_force, _wp);
+        b.applyForce(_force, _rel);
       }
     }
   }
@@ -74,7 +86,10 @@ export function applyBuoyancy(ship: Ship, t: number, waves: WaveField = waveHeig
   if (wet > 0) {
     const v = b.velocity;
     _force.set(-v.x * 18 * wet, -v.y * VERT_DRAG * wet, -v.z * 18 * wet);
-    b.applyForce(_force, b.position);
+    // No relative point: cannon-es defaults it to zero, i.e. the centre of
+    // mass, so this contributes no torque. Under cannon 0.6.2 the equivalent
+    // was passing `b.position`.
+    b.applyForce(_force);
     // Water resists rotation too: damp harder the more of the hull is under.
     const frac = wet / Math.max(1, total);
     b.angularDamping = ANGULAR_DAMP + 0.1 * frac;

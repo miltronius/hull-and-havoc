@@ -15,7 +15,7 @@
  * Pure simulation — no renderer.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import { AI_ELEV, ENGINE_THRUST, TURN_PER_ENGINE } from '../constants';
 import type { Ship } from '../types';
@@ -102,7 +102,9 @@ export function enemyAI(self: Ship, target: Ship, dt: number, ctx: AiContext): v
   const fwdForce = dist > idealMax ? 1 : dist < idealMin ? -0.6 : 0.15;
   _thrust.set(0, 0, self.engines * ENGINE_THRUST * fwdForce);
   e.quaternion.vmult(_thrust, _thrust);
-  e.applyForce(_thrust, e.position);
+  // Centre of mass, so thrust drives the hull without spinning it — see the
+  // note in ship/helm.ts on cannon-es's relative-point convention.
+  e.applyForce(_thrust);
 
   // ── fire only with a valid solution, corrected by observed misses ──
   const wanted = aimDist * self.aimBias;

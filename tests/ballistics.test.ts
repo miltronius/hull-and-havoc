@@ -7,7 +7,7 @@
  * amount of tuning elsewhere will fix it.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 import { describe, expect, it } from 'vitest';
 
 import {

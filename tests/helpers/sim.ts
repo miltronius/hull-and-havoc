@@ -12,7 +12,7 @@
  * measure something the game never does.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import { createPhysicsWorld, stepWorld } from '../../src/engine/physics/world';
 import { applyBuoyancy, shipDepth, updateFlooding } from '../../src/engine/ship/buoyancy';

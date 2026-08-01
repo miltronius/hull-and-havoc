@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      cannon:
-        specifier: 0.6.2
-        version: 0.6.2
+      cannon-es:
+        specifier: ^0.20.0
+        version: 0.20.0
       three:
         specifier: 0.128.0
         version: 0.128.0
@@ -18,9 +18,6 @@ importers:
       '@eslint/js':
         specifier: ^9.15.0
         version: 9.39.5
-      '@types/cannon':
-        specifier: ^0.1.12
-        version: 0.1.13
       '@types/node':
         specifier: ^22.10.1
         version: 22.20.1
@@ -525,9 +522,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@types/cannon@0.1.13':
-    resolution: {integrity: sha512-Yf5nvCblc/PHGA8/wtTOFd1AdS1EhFmHpyPL/tWRk1CRoFAb0M9Kj52dMUwxmNGAguAeS+9siiNi/hk03hhUEA==}
-
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
@@ -674,8 +668,8 @@ packages:
     resolution: {integrity: sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==}
     engines: {node: '>=6'}
 
-  cannon@0.6.2:
-    resolution: {integrity: sha512-n/7wWSXr8KOSvjad2x0fJHgpMepKjOKi+NdSnjfYyijoDBZnp4JQKgPcpv28jlXoWM+N9zVYU09J0A6Qxx+Y7w==}
+  cannon-es@0.20.0:
+    resolution: {integrity: sha512-eZhWTZIkFOnMAJOgfXJa9+b3kVlvG+FX4mdkpePev/w/rP5V8NRquGyEozcjPfEoXUlb+p7d9SUcmDSn14prOA==}
 
   chai@5.3.3:
     resolution: {integrity: sha512-4zNhdJD/iOjSH0A05ea+Ke6MU5mmpQcbQsSOkgdaUMJ9zTlDTD/GYlwohmIE2u0gaxHYiVHEn1Fw9mZ/ktJWgw==}
@@ -1544,8 +1538,6 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.3':
     optional: true
 
-  '@types/cannon@0.1.13': {}
-
   '@types/estree@1.0.9': {}
 
   '@types/json-schema@7.0.15': {}
@@ -1725,7 +1717,7 @@ snapshots:
 
   callsites@3.1.0: {}
 
-  cannon@0.6.2: {}
+  cannon-es@0.20.0: {}
 
   chai@5.3.3:
     dependencies:

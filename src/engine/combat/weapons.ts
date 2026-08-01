@@ -11,7 +11,7 @@
  * directly, so "sinking" is emergent rather than scripted.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import {
   B,
@@ -124,11 +124,9 @@ export function fire(ship: Ship, combat: Combat, opts: FireOptions): boolean {
 
   if (lastDir) {
     const rec = RECOIL_PER_GUN * guns.length;
-    // Applied at body.position so recoil pushes the hull without spinning it.
-    ship.body.applyImpulse(
-      new CANNON.Vec3(lastDir.x * rec, lastDir.y * rec, lastDir.z * rec),
-      ship.body.position,
-    );
+    // No relative point — cannon-es defaults it to the centre of mass, so
+    // recoil pushes the hull without spinning it.
+    ship.body.applyImpulse(new CANNON.Vec3(lastDir.x * rec, lastDir.y * rec, lastDir.z * rec));
   }
   return true;
 }
@@ -249,9 +247,15 @@ export function damageAt(
   }
 
   // Off-centre impulse, so a hit forward of the beam really does slew the bow.
+  // The impact arrives in world space but cannon-es wants it relative to the
+  // body, so subtract the body position — this is the one call site where the
+  // 0.6.2 → cannon-es convention change alters the argument rather than just
+  // dropping it, and leaving it as a world point would scale the knock by the
+  // ship's distance from the origin.
+  const p = ship.body.position;
   ship.body.applyImpulse(
     new CANNON.Vec3((Math.random() - 0.5) * 250, -180, (Math.random() - 0.5) * 250),
-    new CANNON.Vec3(wx, wy, wz),
+    new CANNON.Vec3(wx - p.x, wy - p.y, wz - p.z),
   );
   return true;
 }

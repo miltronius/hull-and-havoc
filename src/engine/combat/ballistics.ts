@@ -11,7 +11,7 @@
  * but only ever as a plain three-component vector.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import {
   B,
