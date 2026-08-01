@@ -9,7 +9,7 @@
  * a temporary dip. The floor plus a sink timer fixed both.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import { G, SEABED } from '../constants';
 
@@ -19,12 +19,20 @@ export interface PhysicsWorld {
 }
 
 export function createPhysicsWorld(): PhysicsWorld {
-  const world = new CANNON.World();
-  world.gravity.set(0, -G, 0);
+  // `World.solver` is typed as the abstract `Solver`, which has no
+  // `iterations`. Build the GSSolver here and configure it while it is still
+  // concretely typed, rather than casting after the fact.
+  //
   // Two ships plus projectiles never needed more than this. Resist the urge
   // to raise the iteration count without a measured reason.
-  world.broadphase = new CANNON.NaiveBroadphase();
-  world.solver.iterations = 12;
+  const solver = new CANNON.GSSolver();
+  solver.iterations = 12;
+
+  const world = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -G, 0),
+    broadphase: new CANNON.NaiveBroadphase(),
+    solver,
+  });
 
   const floorBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane() });
   floorBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
@@ -35,9 +43,9 @@ export function createPhysicsWorld(): PhysicsWorld {
 }
 
 /**
- * Fixed timestep, matching the prototype. cannon's signature is
- * `step(fixedTimeStep, timeSinceLastCall, maxSubSteps)` — three arguments, in
- * that order.
+ * Fixed timestep, matching the prototype. cannon-es keeps cannon 0.6.2's
+ * signature here — `step(fixedTimeStep, timeSinceLastCall, maxSubSteps)`,
+ * three arguments in that order — so this call is unchanged by the migration.
  */
 export const FIXED_STEP = 1 / 60;
 export const MAX_SUB_STEPS = 3;

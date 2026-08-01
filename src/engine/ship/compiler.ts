@@ -11,7 +11,7 @@
  * `ship.blocks` in the same order this file builds it.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 
 import {
   ANGULAR_DAMP,
@@ -197,10 +197,16 @@ export interface BlockRemoval {
 /**
  * Detach a single block from the compound body.
  *
- * cannon 0.6.2 has no `removeShape()`, so the shape must be spliced out of
- * three parallel arrays by hand and the derived properties recomputed. Phase 2
- * can replace this with `body.removeShape(shape)` — but keep the explicit
- * `updateMassProperties()` / `updateBoundingRadius()` calls either way.
+ * cannon-es has `removeShape()`, which splices the three parallel arrays
+ * (`shapes`, `shapeOffsets`, `shapeOrientations`) and recomputes the derived
+ * properties for us. cannon 0.6.2 had neither, so this used to do all of it
+ * by hand.
+ *
+ * The explicit `updateMassProperties()` below is still required, and the
+ * ordering is the reason: `removeShape` recomputes using the mass the body
+ * had at that moment, and we only adjust `body.mass` afterwards. Without the
+ * second call the inertia tensor stays keyed to the pre-removal mass, so a
+ * ship losing blocks would keep rotating like a heavier one.
  *
  * Returns the block's last world position, or `null` if it was already dead.
  * Debris and splash are the caller's job; this module draws nothing.
@@ -214,22 +220,18 @@ export function destroyBlock(ship: Ship, blk: ShipBlock): BlockRemoval | null {
   ship.body.quaternion.vmult(blk.local, wp);
   wp.vadd(ship.body.position, wp);
 
-  const idx = ship.body.shapes.indexOf(blk.shape);
-  if (idx >= 0) {
-    ship.body.shapes.splice(idx, 1);
-    ship.body.shapeOffsets.splice(idx, 1);
-    ship.body.shapeOrientations.splice(idx, 1);
-  }
+  // Guarded so cannon-es doesn't console.warn on a shape already detached.
+  if (ship.body.shapes.includes(blk.shape)) ship.body.removeShape(blk.shape);
   // Floor the mass: a zero-mass body would become static mid-battle.
   ship.body.mass = Math.max(40, ship.body.mass - blk.mass);
   ship.body.updateMassProperties();
-  ship.body.updateBoundingRadius();
-  ship.body.aabbNeedsUpdate = true;
 
   recountShip(ship);
   return { x: wp.x, y: wp.y, z: wp.z };
 }
 
 export function removeShip(world: CANNON.World, ship: Ship): void {
-  world.remove(ship.body);
+  // cannon 0.6.2's `world.remove()` is `removeBody()` in cannon-es; the old
+  // name is gone entirely rather than deprecated.
+  world.removeBody(ship.body);
 }

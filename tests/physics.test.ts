@@ -12,7 +12,7 @@
  * drift is exactly zero) that is a real invariant, not luck.
  */
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 import { describe, expect, it } from 'vitest';
 
 import {

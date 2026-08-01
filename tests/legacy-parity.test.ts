@@ -11,16 +11,39 @@
  * If this fails, the port changed the simulation. That is almost never what
  * was intended.
  *
- * Phase 2 (cannon-es, three r160+) is where this file earns its keep: it is
- * the only thing that can tell you whether the `applyForce` relative-point
- * change was translated correctly, because the symptom otherwise is "the boat
- * feels a bit odd".
+ * ── What the cannon-es migration changed here ────────────────────────────
+ *
+ * Two things, both deliberate:
+ *
+ * 1. **The legacy slice is run through `worldPointBody`.** The prototype
+ *    speaks cannon 0.6.2, where `applyForce`'s second argument is a *world*
+ *    point; cannon-es reads it as a point *relative to* the centre of mass.
+ *    Run unadapted against a cannon-es body, the reference would apply every
+ *    force an entire ship-position from the hull — so the test would fail
+ *    loudly while the port was in fact correct. The adapter restores 0.6.2's
+ *    semantics for the reference only.
+ *
+ * 2. **Exact equality became a tight relative tolerance.** Under 0.6.2 the
+ *    lift point round-tripped through world space, so cannon computed
+ *    `r = (rot(sp) + pos) - pos`; the port hands cannon-es `rot(sp)` directly.
+ *    Those are the same quantity in exact arithmetic but differ in the last
+ *    ulp or two once the hull is both heeled and far from the origin, which
+ *    is precisely what the "far from the origin" case exercises. Bit-identity
+ *    was the right bar for Phase 1 (a mechanical extraction, where identical
+ *    arithmetic was achievable); it is the wrong bar across a library swap,
+ *    because defending it would mean writing deliberately redundant float
+ *    round-trips that a later reader would rightly delete.
+ *
+ * The tolerance is still far tighter than any real mistake. Getting the
+ * relative-point convention wrong is an error of order the ship's distance
+ * from the origin — hundreds of metres — not 1e-14, so this file continues to
+ * do the job it was written for.
  */
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
-import * as CANNON from 'cannon';
+import * as CANNON from 'cannon-es';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import * as THREE from 'three';
@@ -44,6 +67,66 @@ import type { Ship } from '../src/engine/types';
 import { waveHeight } from '../src/engine/waves';
 
 const LEGACY = fileURLToPath(new URL('../legacy/hull-and-havoc-v3.html', import.meta.url));
+
+/**
+ * Present a cannon-es body to the frozen prototype using cannon 0.6.2's
+ * `applyForce(force, worldPoint)` convention.
+ *
+ * This is a faithful reproduction of the one line that changed, verified
+ * against the 0.6.2 source (`build/cannon.js:5809`):
+ *
+ *     worldPoint.vsub(this.position, r);
+ *
+ * Everything else — `force`, `torque`, `velocity`, `angularDamping` — passes
+ * straight through to the real body, so the accumulated values the assertions
+ * read are the genuine article rather than the adapter's bookkeeping.
+ */
+function worldPointBody(body: CANNON.Body): CANNON.Body {
+  const rel = new CANNON.Vec3();
+  return new Proxy(body, {
+    get(target, prop) {
+      if (prop === 'applyForce') {
+        return (force: CANNON.Vec3, worldPoint?: CANNON.Vec3): void => {
+          if (!worldPoint) return target.applyForce(force);
+          worldPoint.vsub(target.position, rel);
+          target.applyForce(force, rel);
+        };
+      }
+      const value: unknown = Reflect.get(target, prop);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
+/**
+ * Relative tolerance for the buoyancy comparison.
+ *
+ * Not a guess. Setting this to 0 and running leaves exactly one failing
+ * assertion across all nine states: `torque.x` in the "far from the origin"
+ * case, off by 1.4e-12 on a value of -2813.7 — a single ulp, from the float
+ * round-trip described in the file header. Every other component is still
+ * bit-identical to the prototype.
+ *
+ * 1e-12 relative therefore clears the observed drift by ~3 orders of
+ * magnitude while staying ~6 orders tighter than the smallest real mistake:
+ * reintroducing the world-point convention was measured at 1e7 on that same
+ * component. If this ever needs loosening, find out what changed first.
+ */
+const PARITY_TOL = 1e-12;
+
+function expectClose(actual: readonly number[], expected: readonly number[], label: string): void {
+  expect(actual).toHaveLength(expected.length);
+  for (let i = 0; i < expected.length; i++) {
+    const a = actual[i]!;
+    const e = expected[i]!;
+    // Scale by magnitude: these are newtons and newton-metres, and the lift
+    // on a loaded hull runs to five figures.
+    const tol = PARITY_TOL * Math.max(1, Math.abs(e));
+    expect(Math.abs(a - e), `${label}[${i}]: ported ${a} vs prototype ${e}`).toBeLessThanOrEqual(
+      tol,
+    );
+  }
+}
 
 type LegacyWave = (x: number, z: number, t: number) => number;
 type LegacyBuoyancy = (ship: Ship, t: number) => void;
@@ -214,11 +297,15 @@ describe('applyBuoyancy parity', () => {
       c.setup(ship);
 
       // Same ship, same state, run twice — so any difference is the code.
-      const ported = measure(ship, c.t, applyBuoyancy);
-      const original = measure(ship, c.t, legacyApplyBuoyancy);
+      // The prototype gets the same body wearing 0.6.2's force convention.
+      const legacyShip: Ship = { ...ship, body: worldPointBody(ship.body) };
 
-      expect(ported.force).toEqual(original.force);
-      expect(ported.torque).toEqual(original.torque);
+      const ported = measure(ship, c.t, applyBuoyancy);
+      const original = measure(legacyShip, c.t, legacyApplyBuoyancy);
+
+      expectClose(ported.force, original.force, 'force');
+      expectClose(ported.torque, original.torque, 'torque');
+      // Damping is copied, not computed from positions — still exact.
       expect(ported.angularDamping).toBe(original.angularDamping);
     });
   }

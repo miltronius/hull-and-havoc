@@ -106,9 +106,21 @@ the same commit — the failure is the point.
 
 - **`legacy-parity.test.ts`** — slices `waveHeight`, `applyBuoyancy` and
   `predictImpact` verbatim out of the frozen prototype, evaluates them, and
-  asserts the ported versions produce **bit-identical** force, torque and
-  impact points across nine ship states. This is what makes "the port didn't
-  change the simulation" a falsifiable claim rather than a hope.
+  asserts the ported versions produce the same force, torque and impact
+  points across nine ship states. This is what makes "the port didn't change
+  the simulation" a falsifiable claim rather than a hope, and it is what
+  caught the cannon-es relative-point convention.
+  `waveHeight` and `predictImpact` are still asserted **bit-identical**.
+  `applyBuoyancy` moved to a `1e-12` relative tolerance during the cannon-es
+  swap, for a measured reason documented at the top of that file: 0.6.2
+  computed the lift point as `(rot(sp) + pos) - pos` and cannon-es is handed
+  `rot(sp)` directly, which differs by one ulp on a heeled hull far from the
+  origin. Everything else still matches exactly. Don't loosen it further
+  without finding out what changed — a genuinely wrong translation shows up
+  at ~1e7 on the same component, not 1e-12.
+  The legacy slice runs through a `worldPointBody` proxy that re-imposes
+  0.6.2's world-point convention on the reference *only*; without it the
+  prototype side would be the broken one.
 - **`physics.test.ts`** — the regressions that matter. Each pins a bug that
   was already found the hard way once:
   - depth-hold reaches 90% of a step in ~8.6 s with no overshoot;
@@ -127,44 +139,53 @@ the same commit — the failure is the point.
   `Game.stepBattle` exactly; **if you change the per-frame order in
   `game.ts`, change it here too**, or this will pass while the game misbehaves.
 
-## Known cannon.js 0.6.2 pitfalls (critical — this version's API differs from newer docs)
+## Known cannon-es pitfalls (critical — and the ones inherited from 0.6.2)
 
-These bit us repeatedly during development. Any new physics code must respect
-them:
+The engine runs on **cannon-es 0.20**. The migration off cannon 0.6.2 is done;
+what follows is the current truth, with the old behaviour noted only where a
+future reader might otherwise trust a stale tutorial.
 
-- **`body.applyTorque()` does not exist in 0.6.2.** Apply torque directly:
-  `body.torque.x/y/z += value`. Torque accumulates and is cleared each step
-  by the solver automatically.
-- **`applyForce(force, point)` and `applyImpulse(impulse, point)` take a
-  WORLD-space point, not a local/relative one.** Verified directly against
-  the installed source — `build/cannon.js:5809` does
-  `worldPoint.vsub(this.position, r)`. Passing `(0,0,0)` therefore applies
-  the force at the world origin, not at the body, which caused runaway
-  torque bugs early on (engine thrust, firing recoil, damage impulses). If
-  you want to push a whole body without inducing rotation, pass
-  `body.position` as the point.
-  **⚠ cannon-es reverses this**: its `applyForce` takes a point *relative to*
-  the body. Every call site changes in the Phase 2 migration, and getting it
-  wrong reproduces exactly the bug above while looking entirely plausible.
-  Read the installed `.d.ts` before touching it, and lean on
-  `tests/legacy-parity.test.ts` — it is the only thing that will catch a
-  subtly wrong translation.
-- **There is no `removeShape()` on a compound body.** To destroy an
-  individual block, splice its shape out of the parallel arrays yourself:
-  `body.shapes.splice(idx,1)`, `body.shapeOffsets.splice(idx,1)`,
-  `body.shapeOrientations.splice(idx,1)`, then call
-  `body.updateMassProperties()` and `body.updateBoundingRadius()`. See
-  `destroyBlock()` in `src/engine/ship/compiler.ts`. cannon-es *does* have
-  `removeShape()`; keep the explicit recompute calls either way.
-- **`@types/cannon` is missing `Body.boundingRadius`**, which genuinely
-  exists (`build/cannon.js:5721`) and the swept hit detection needs. Declared
-  in `src/types/cannon.d.ts`; that file disappears with cannon-es.
+- **`applyForce(force, relativePoint?)` and `applyImpulse(impulse, point?)`
+  take a point RELATIVE TO the centre of mass**, and it defaults to zero.
+  Verified against the installed `cannon-es.d.ts` and `cannon-es.js:3718`.
+  So to push a whole body without inducing rotation, **omit the second
+  argument** — that is the idiom used in `helm.ts`, `ai.ts` and the recoil
+  path in `weapons.ts`.
+  **⚠ This is the reverse of cannon 0.6.2**, where the argument was a *world*
+  point and centre-of-mass application meant passing `body.position`. Any
+  tutorial, LLM answer or old snippet you find will most likely be written
+  the 0.6.2 way. Passing a world point now scales the induced torque by the
+  ship's distance from the origin: harmless at spawn, catastrophic at range,
+  and completely invisible in a test that keeps its ships near `(0,0,0)`.
+  Two call sites genuinely have off-centre points and must convert rather
+  than drop the argument — lift in `buoyancy.ts` and the damage knock in
+  `weapons.ts`; both are commented in place.
+- **`body.applyTorque()` exists now** (it did not in 0.6.2), but the code
+  still accumulates into `body.torque.x/y/z` directly — it stays
+  allocation-free on the 60 Hz path, and `applyTrim` has to write individual
+  components anyway. The solver clears `body.torque` each step either way.
+- **`removeShape()` exists** and splices `shapes` / `shapeOffsets` /
+  `shapeOrientations` for you, *and* recomputes mass properties and bounding
+  radius. `destroyBlock()` still calls `updateMassProperties()` afterwards,
+  and the ordering is the reason: it adjusts `body.mass` *after* the removal,
+  so without the second call the inertia tensor stays keyed to the
+  pre-removal mass. Guard the call with a `shapes.includes()` check —
+  cannon-es `console.warn`s on a shape that isn't attached.
+- **`world.remove()` is gone; it is `world.removeBody()`.** Renamed, not
+  deprecated, so the old name is a straight `TypeError` at runtime.
+- **`world.solver` is typed as the abstract `Solver`, which has no
+  `iterations`.** Construct a `GSSolver`, set `iterations` on it while it is
+  still concretely typed, and pass it to the `World` constructor — see
+  `physics/world.ts`. Casting `world.solver` after the fact also compiles but
+  hides the intent.
+- **`Body.boundingRadius` is properly typed now**, so the old
+  `src/types/cannon.d.ts` shim is deleted. The swept hit detection reads it.
 - **`world.step(fixedTimeStep, timeSinceLastCall, maxSubSteps)`** — three
-  args, in that order.
+  args in that order, unchanged from 0.6.2.
 - **Applying drag forces at off-center sample points sums into unwanted
   torque.** Lift can stay per-sample-point (that's what rights a listing
-  hull), but drag/damping forces should be applied once at `body.position`
-  (the center of mass) or they silently spin the body — invisible on a wavy
+  hull), but drag/damping forces should be applied once at the centre of mass
+  (under cannon-es: omit the point) or they silently spin the body — invisible on a wavy
   surface where sample points constantly change, but a constant phantom yaw
   the moment the whole hull is submerged and every point is wet at once.
   This was a real bug, found and fixed during development — don't
@@ -174,12 +195,14 @@ them:
   bleeds into yaw once the hull isn't level (a tilted "right" axis has a
   vertical component). Strip the world-Y component out of trim torques if
   you don't want heel input to also turn the ship.
-- Prefer `NaiveBroadphase` and modest `solver.iterations` (12 here) — this
+- Prefer `NaiveBroadphase` and modest solver `iterations` (12 here) — this
   project never needed more for two ships plus projectiles.
 
 ## Waiting to bite you: the three.js r128 → r160+ upgrade
 
-Pinned at r128 deliberately until Phase 2. Two changes will visibly alter the
+Pinned at r128 deliberately — this is the **remaining half of Phase 2**, and
+the reason it is still pending is that the cannon-es swap was verifiable
+headlessly and this one is not. Two changes will visibly alter the
 look, and neither announces itself as an error:
 
 - **Colour management is on by default from r152.** Every hex colour is then
@@ -290,8 +313,20 @@ Phase 1 (module extraction on pinned deps) is complete. Remaining, in order —
 each phase changes exactly one variable, because the tuning is empirical and
 you need to be able to bisect what changed the feel:
 
-- **Phase 2 — dependency modernisation**: three r160+, cannon-es. Highest
-  risk; see the `applyForce` and colour-management warnings above.
+- **Phase 2 — dependency modernisation**. Split in two, because "one variable
+  at a time" applies *within* the phase: the two halves fail in completely
+  different ways and only one of them is testable headlessly.
+  - ✅ **cannon 0.6.2 → cannon-es 0.20** — done. Six force/impulse call sites
+    converted to the relative-point convention, `removeShape`/`removeBody`
+    adopted, the `@types/cannon` shim and the Vite UMD pre-bundle deleted.
+    All 113 tests still pass. Verified by deliberately reintroducing the
+    world-point bug and confirming the suite fails (it does: 3 tests, the
+    parity torque off by 1e7) — do the same for any future physics change,
+    because a green suite proves nothing until you know it can go red.
+  - ⬜ **three r128 → r160+** — still pending, and deliberately *not*
+    bundled with the above. See the colour-management and light-units
+    warnings; both change the look without erroring, and no test covers the
+    renderer, so this one needs eyes on a real device.
 - **Phase 3 — React UI**: replace `src/ui/hud.ts` panel by panel, deleting
   each telemetry binding as its component lands.
 - **Phase 4 — game scope**: enemy roster, upgrade shop, blueprint save/load,

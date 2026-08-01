@@ -8,7 +8,7 @@
  * health system.
  */
 
-import type * as CANNON from 'cannon';
+import type * as CANNON from 'cannon-es';
 import type * as THREE from 'three';
 
 // ─── Blocks ──────────────────────────────────────────────────────────────
